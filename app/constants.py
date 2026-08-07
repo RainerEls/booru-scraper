@@ -1,0 +1,1 @@
+GELBOORU_TAG_TYPES = {0: 'general',1: 'artist',3: 'copyright',4: 'character',5: 'metadata'}
