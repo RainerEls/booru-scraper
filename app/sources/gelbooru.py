@@ -1,5 +1,7 @@
-import requests
 import time
+
+import requests
+
 from .. import config
 
 API_KEY = config.GELBOORU_API_KEY
