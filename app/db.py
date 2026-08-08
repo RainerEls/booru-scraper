@@ -55,6 +55,7 @@ class Tags(Base):
 #------------------------#
 #       Functions        #
 #------------------------#
+# TODO: Add transaction logic for safe db operations
 def post_exists(source, source_post_id):
     with Session(engine) as session:
         source_post_known = select(Posts).where(Posts.source == source, Posts.source_post_id == source_post_id)
@@ -87,5 +88,12 @@ def store_tag(tag_name, tag_type):
 
         session.add(save_tag)
         session.commit()
+
+def update_post_status(source, source_post_id, status):
+    with Session(engine) as session:
+            find_post = select(Posts).where(Posts.source == source, Posts.source_post_id == source_post_id)
+            post_found = session.execute(find_post).scalar_one()
+            post_found.status = status
+            session.commit()
 
 Base.metadata.create_all(engine)
