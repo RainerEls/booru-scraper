@@ -1,0 +1,62 @@
+networks:
+  booru-scraper-backend:
+    driver: bridge
+
+services:
+  database:
+    image: postgres:18
+    container_name: booru-scraper-db
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=${DB_NAME}
+
+    networks:
+      - booru-scraper-backend
+
+    volumes:
+      - ${DOCKER_VOLUME_STORAGE:-/var/lib/docker/volumes}/booru-scraper/db:/var/lib/postgresql
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  booru-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: booru-scraper:latest
+    container_name: booru-scraper
+    restart: unless-stopped
+
+    depends_on:
+      database:
+        condition: service_healthy
+
+    env_file:
+      - .env
+
+    environment:
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_HOST=database
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - GELBOORU_API_KEY=${GELBOORU_API_KEY}
+      - GELBOORU_USER_ID=${GELBOORU_USER_ID}
+      - GELBOORU_RATE_LIMIT=1
+    
+    ports:
+      - 8192:8000
+
+    networks:
+      - booru-scraper-backend
