@@ -81,6 +81,7 @@ def store_post(source, source_post_id, szurubooru_post_id, md5, image_url, statu
 
         session.add(new_post)
         session.commit()
+        return new_post.id
 
 def tag_exists(tag_name):
     with Session(engine) as session:
@@ -94,6 +95,13 @@ def store_tag(tag_name, tag_type):
         save_tag = Tags(tag=tag_name, type=tag_type)
 
         session.add(save_tag)
+        session.commit()
+
+def add_szurubooru_post_id(id, szurubooru_post_id):
+    with Session(engine) as session:
+        find_id = select(Posts).where(Posts.id == id)
+        id_found = session.execute(find_id).scalar_one()
+        id_found.szurubooru_post_id = szurubooru_post_id
         session.commit()
 
 def update_post_status(source, source_post_id, status):
