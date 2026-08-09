@@ -63,6 +63,13 @@ def post_exists(source, source_post_id):
 
     return bool(result is not None)
 
+def md5_exists(md5):
+    with Session(engine) as session:
+        md5_existing = select(Posts).where(Posts.md5 == md5)
+        result = session.execute(md5_existing).first()
+        
+    return bool(result is not None)
+
 def store_post(source, source_post_id, szurubooru_post_id, md5, image_url, status):
     with Session(engine) as session:
         new_post = Posts(source=source, 
