@@ -5,3 +5,4 @@ all_tags = set()
 for result in results:
     separate_tags = result['tags'].split(" ")
     all_tags.update(separate_tags)
+print(results)

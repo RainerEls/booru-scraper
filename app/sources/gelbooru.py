@@ -6,7 +6,7 @@ from .. import config
 
 API_KEY = config.GELBOORU_API_KEY
 USER_ID = config.GELBOORU_USER_ID
-RATE_LIMIT = config.GELBOORU_RATE_LIMIT
+RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
 
 session = requests.session()
 session.params = {'api_key': API_KEY, 'user_id': USER_ID, 'json': 1}
@@ -23,15 +23,12 @@ def search_posts(limit=5, tags='', blacklist_tags=''):
 
     while response_number >= 100 and limit >= len(search_results):
         r = session.get('https://gelbooru.com/index.php?page=dapi&s=post&q=index&pid=' + str(page), params=payloadPost)
-        print(r.json())
         page_results = r.json()['post']
         response_number = len(page_results)
         page += 1
         search_results.extend(page_results)
         time.sleep(RATE_LIMIT)
     return search_results
-
-
 
 def grab_tags(tags):
 
