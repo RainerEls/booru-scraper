@@ -1,10 +1,8 @@
 import base64
-import json
-import time
 
 import requests
 
-from app import config, constants
+from app import config
 
 USER_ID = config.SZURUBOORU_USER_ID
 API_TOKEN = config.SZURUBOORU_API_TOKEN
