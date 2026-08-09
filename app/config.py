@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+LOGLEVEL = os.getenv("LOGLEVEL", 'INFO')
+
 DB_USER = os.getenv("DB_USER", 'changeme')
 DB_PASS = os.getenv("DB_PASS", 'changeme')
 DB_HOST = os.getenv("DB_HOST", '127.0.0.1')

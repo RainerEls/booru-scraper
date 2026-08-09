@@ -16,8 +16,9 @@ def search_posts(limit=5, tags='', blacklist_tags=''):
     page = 1
     response_number = 100
     search_results = []
+    bad_tags = ''
 
-    bad_tags = ["-" + tag for tag in blacklist_tags.split(" ")]
+    if blacklist_tags: bad_tags = ["-" + tag for tag in blacklist_tags.split(" ")]
     all_tags = " ".join(bad_tags) + " " + tags
     payloadPost = {'tags': all_tags, 'limit': min(limit, 100)}
 
