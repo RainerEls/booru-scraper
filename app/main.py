@@ -89,7 +89,7 @@ def run_scrape(run_id, queue, limit, tags, blacklist_tags): #TODO: add rate_limi
         for post in new_posts:
             contentUrl = post['file_url']
             tags = post['tags']
-            safety = constants.GELBOORU_RATINGS_CONVERSIONS[post['rating']]
+            safety = constants.GELBOORU_RATINGS_CONVERSIONS.get(post['rating'], 'sketchy')
             booru_source = 'gelbooru'
             source = post['source']
             source_id = post['id']
