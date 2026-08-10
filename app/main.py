@@ -65,9 +65,9 @@ async def process_post(post, semaphore, lock, queue, counters):
             booru_source, source_id, None, md5, contentUrl, "queued"
         )
         logger.debug(f"{db_entry} db entry added")
-        # Attempt to upload to szurubooru
-        r = await szurubooru.upload_post(contentUrl, tags, safety, source)
+        # Attempt to upload to szurubooru\
         logger.debug("Attempting to upload post to szurubooru")
+        r = await szurubooru.upload_post(contentUrl, tags, safety, source)
 
         # Succeed: add the szurubooru post id to the db entry and update the entry status
         if r.status_code == 200:
