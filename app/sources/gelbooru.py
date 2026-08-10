@@ -27,7 +27,7 @@ async def search_posts(limit=5, tags="", blacklist_tags="", rating=None):
     while response_number >= 100 and limit >= len(search_results):
         payloadPost = {
             "tags": all_tags,
-            "limit": min(limit, 100),
+            "limit": 100,
             "page": "dapi",
             "s": "post",
             "q": "index",
@@ -43,7 +43,7 @@ async def search_posts(limit=5, tags="", blacklist_tags="", rating=None):
         page += 1
         search_results.extend(page_results)
         await asyncio.sleep(RATE_LIMIT)
-    return search_results
+    return search_results[:limit]
 
 
 async def grab_tags(tags):
