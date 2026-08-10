@@ -114,6 +114,10 @@ def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating): #TODO: add r
                 db.add_szurubooru_post_id(db_entry, r.json()['id'])
                 db.update_post_status(booru_source, source_id, 'processed')
             # Fail: set status to failure
+            elif r.status_code == 400 and r.json()['name'] == 'PostAlreadyUploadedError':
+                skipped += 1
+                queue.put_nowait({"processed": processed, "skipped": skipped, "failed": failed, "total": total, "log": "Skipped", "level": "debug"})
+                db.update_post_status(booru_source, source_id, 'skipped')
             else:
                 failed += 1
                 queue.put_nowait({"processed": processed, "skipped": skipped, "failed": failed, "total": total, "log": "post failed to process", "level": "debug"})
