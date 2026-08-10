@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Scrape · Booru Scraper{% endblock %}
+
+{% block content %}
+
+<div class="section-head" style="margin-top: 28px;">
+  <h2>New Scrape Job</h2>
+  <div class="rule"></div>
+</div>
+
+<div class="card">
+  <form id="scrape-form">
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="source">Source</label>
+        <select id="source" name="source">
+          <option value="gelbooru">Gelbooru</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="rating">Rating</label>
+        <select id="rating" name="rating">
+          <option value="">Any</option>
+          <option value="safe">Safe</option>
+          <option value="questionable">Questionable</option>
+          <option value="explicit">Explicit</option>
+        </select>
+      </div>
+
+      <div class="form-group form-group--narrow">
+        <label for="limit">Max Posts</label>
+        <input type="number" id="limit" name="limit" value="100" min="1" max="10000">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="tags">Tags</label>
+        <input
+          type="text"
+          id="tags"
+          name="tags"
+          placeholder="space separated · e.g. cat solo highres"
+          autocomplete="off"
+          spellcheck="false"
+        >
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="blacklist">Blacklisted Tags</label>
+        <input
+          type="text"
+          id="blacklist"
+          name="blacklist"
+          placeholder="space separated · e.g. gore violence"
+          autocomplete="off"
+          spellcheck="false"
+        >
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary" id="submit-btn">
+        <span id="submit-label">Start Scrape</span>
+      </button>
+    </div>
+
+  </form>
+</div>
+
+
+<div id="progress-section" class="hidden">
+
+  <div class="section-head" style="margin-top: 28px;">
+    <h2>Current Run</h2>
+    <div class="rule"></div>
+    <span id="run-status-badge" class="status-badge status-badge--running">Running</span>
+  </div>
+
+  <div class="card">
+
+    <div class="progress-bar-wrap">
+      <div class="progress-bar">
+        <div class="progress-bar__fill" id="progress-fill" style="width: 0%"></div>
+      </div>
+      <span class="progress-pct" id="progress-pct">0%</span>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat">
+        <span class="stat__value stat__value--green" id="count-processed">0</span>
+        <span class="stat__label">Uploaded</span>
+      </div>
+      <div class="stat">
+        <span class="stat__value stat__value--amber" id="count-skipped">0</span>
+        <span class="stat__label">Skipped</span>
+      </div>
+      <div class="stat">
+        <span class="stat__value stat__value--red" id="count-failed">0</span>
+        <span class="stat__label">Failed</span>
+      </div>
+      <div class="stat">
+        <span class="stat__value" id="count-total">0</span>
+        <span class="stat__label">Total Found</span>
+      </div>
+    </div>
+
+    <div class="log-wrap">
+      <div class="log" id="log-output"></div>
+    </div>
+
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const form = document.getElementById('scrape-form');
+  const progressSection = document.getElementById('progress-section');
+  const submitBtn = document.getElementById('submit-btn');
+  const submitLabel = document.getElementById('submit-label');
+  const progressFill = document.getElementById('progress-fill');
+  const progressPct = document.getElementById('progress-pct');
+  const logOutput = document.getElementById('log-output');
+  const statusBadge = document.getElementById('run-status-badge');
+
+  const counts = {
+    processed: document.getElementById('count-processed'),
+    skipped:   document.getElementById('count-skipped'),
+    failed:    document.getElementById('count-failed'),
+    total:     document.getElementById('count-total'),
+  };
+
+  let eventSource = null;
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const payload = {
+      source:    document.getElementById('source').value,
+      rating:    document.getElementById('rating').value,
+      limit:     parseInt(document.getElementById('limit').value),
+      tags:      document.getElementById('tags').value.trim(),
+      blacklist: document.getElementById('blacklist').value.trim(),
+    };
+
+    // Reset UI
+    progressFill.style.width = '0%';
+    progressPct.textContent = '0%';
+    counts.processed.textContent = '0';
+    counts.skipped.textContent = '0';
+    counts.failed.textContent = '0';
+    counts.total.textContent = '0';
+    logOutput.innerHTML = '';
+    statusBadge.className = 'status-badge status-badge--running';
+    statusBadge.textContent = 'Running';
+    progressSection.classList.remove('hidden');
+    submitBtn.disabled = true;
+    submitLabel.textContent = 'Running…';
+
+    // POST to trigger the job, then open SSE stream
+    fetch('/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    .then(res => res.json())
+    .then(data => {
+      const jobId = data.job_id;
+
+      if (eventSource) eventSource.close();
+      eventSource = new EventSource(`/scrape/progress/${jobId}`);
+
+      eventSource.onmessage = function(e) {
+        const msg = JSON.parse(e.data);
+
+        if (msg.total) counts.total.textContent = msg.total;
+        if (msg.processed !== undefined) counts.processed.textContent = msg.processed;
+        if (msg.skipped   !== undefined) counts.skipped.textContent   = msg.skipped;
+        if (msg.failed    !== undefined) counts.failed.textContent    = msg.failed;
+
+        if (msg.total && msg.total > 0) {
+          const done = (msg.processed || 0) + (msg.skipped || 0) + (msg.failed || 0);
+          const pct = Math.round((done / msg.total) * 100);
+          progressFill.style.width = pct + '%';
+          progressPct.textContent = pct + '%';
+        }
+
+        if (msg.log) {
+          const line = document.createElement('div');
+          line.className = 'log-line log-line--' + (msg.level || 'info');
+          line.textContent = msg.log;
+          logOutput.appendChild(line);
+          logOutput.scrollTop = logOutput.scrollHeight;
+        }
+
+        if (msg.status === 'done' || msg.status === 'error') {
+          eventSource.close();
+          submitBtn.disabled = false;
+          submitLabel.textContent = 'Start Scrape';
+          statusBadge.className = 'status-badge status-badge--' + (msg.status === 'done' ? 'done' : 'error');
+          statusBadge.textContent = msg.status === 'done' ? 'Done' : 'Error';
+        }
+      };
+
+      eventSource.onerror = function() {
+        eventSource.close();
+        submitBtn.disabled = false;
+        submitLabel.textContent = 'Start Scrape';
+        statusBadge.className = 'status-badge status-badge--error';
+        statusBadge.textContent = 'Connection lost';
+      };
+    })
+    .catch(err => {
+      console.error(err);
+      submitBtn.disabled = false;
+      submitLabel.textContent = 'Start Scrape';
+    });
+  });
+</script>
+{% endblock %}

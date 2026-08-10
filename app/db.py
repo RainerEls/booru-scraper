@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from sqlalchemy import (
@@ -9,13 +10,15 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from app import config
 
+logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+
 DB_USER = config.DB_USER
 DB_PASS = config.DB_PASS
 DB_HOST = config.DB_HOST
 DB_PORT = config.DB_PORT
 DB_NAME = config.DB_NAME
 
-engine = create_engine(f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}", echo=True)
+engine = create_engine(f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}", echo=False)
 
 #------------------------#
 #         Tables         #
@@ -32,7 +35,7 @@ class Posts(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
     status: Mapped[str] = mapped_column()
     source: Mapped[str] = mapped_column()
     source_post_id: Mapped[int] = mapped_column()
@@ -48,9 +51,28 @@ class Tags(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
     tag: Mapped[str] = mapped_column()
     type: Mapped[int] = mapped_column()
+
+class Runs(Base):
+    __tablename__ = "runs"
+    __table_args__ = (
+        UniqueConstraint('uuid'),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    source: Mapped[str] = mapped_column()
+    tags: Mapped[str] = mapped_column(nullable=True)
+    blacklist_tags: Mapped[str] = mapped_column(nullable=True)
+    total: Mapped[int] = mapped_column(nullable=True)
+    processed: Mapped[int] = mapped_column(nullable=True)
+    skipped: Mapped[int] = mapped_column(nullable=True)
+    failed: Mapped[int] = mapped_column(nullable=True)
+    status: Mapped[str] = mapped_column()
+
 
 #------------------------#
 #       Functions        #
@@ -72,12 +94,14 @@ def md5_exists(md5):
 
 def store_post(source, source_post_id, szurubooru_post_id, md5, image_url, status):
     with Session(engine) as session:
-        new_post = Posts(source=source, 
-        source_post_id=source_post_id, 
-        szurubooru_post_id=szurubooru_post_id, 
-        md5=md5, 
-        image_url=image_url, 
-        status=status)
+        new_post = Posts(
+            source=source, 
+            source_post_id=source_post_id, 
+            szurubooru_post_id=szurubooru_post_id, 
+            md5=md5, 
+            image_url=image_url, 
+            status=status
+            )
 
         session.add(new_post)
         session.commit()
@@ -110,5 +134,37 @@ def update_post_status(source, source_post_id, status):
             post_found = session.execute(find_post).scalar_one()
             post_found.status = status
             session.commit()
+
+def get_runs():
+    with Session(engine) as session:
+        get_entries = select(Runs).order_by(Runs.created_at.desc())
+        result = session.execute(get_entries).scalars().all()
+    return result
+
+def create_run(uuid, source, tags, blacklist_tags, status):
+    with Session(engine) as session:
+        run = Runs(
+            uuid=uuid,
+            source=source,
+            tags=tags,
+            blacklist_tags=blacklist_tags,
+            status=status
+            )
+        
+        session.add(run)
+        session.commit()
+
+        return run.id
+
+def update_run(id, total, processed, skipped, failed, status):
+    with Session(engine) as session:
+        find_run = select(Runs).where(Runs.id == id)
+        run_found = session.execute(find_run).scalar_one()
+        run_found.total = total
+        run_found.processed = processed
+        run_found.skipped = skipped
+        run_found.failed = failed
+        run_found.status = status
+        session.commit()
 
 Base.metadata.create_all(engine)

@@ -1,2 +1,2 @@
 GELBOORU_TAG_TYPES = {0: 'general',1: 'artist',3: 'copyright',4: 'character',5: 'metadata'}
-GELBOORU_RATINGS_CONVERSIONS = {'safe': 'safe', 'questionable': 'sketchy', 'explicit': 'unsafe'}
+GELBOORU_RATINGS_CONVERSIONS = {'general': 'safe', 'safe': 'safe', 'questionable': 'sketchy', 'explicit': 'unsafe'}

@@ -4,3 +4,5 @@ requests
 SQLAlchemy
 fastapi
 uvicorn
+jinja2
+pydantic

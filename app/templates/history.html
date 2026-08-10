@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}History · Booru Scraper{% endblock %}
+
+{% block content %}
+
+<div class="section-head" style="margin-top: 28px;">
+  <h2>Run History</h2>
+  <div class="rule"></div>
+</div>
+
+{% if runs %}
+<div class="card card--flush">
+  <table class="history-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Source</th>
+        <th>Tags</th>
+        <th class="num">Total</th>
+        <th class="num">Uploaded</th>
+        <th class="num">Skipped</th>
+        <th class="num">Failed</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td class="mono time-cell">{{ run.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ run.source }}</td>
+        <td class="tags-cell">{{ run.tags or '—' }}</td>
+        <td class="num">{{ run.total }}</td>
+        <td class="num green">{{ run.processed }}</td>
+        <td class="num amber">{{ run.skipped }}</td>
+        <td class="num red">{{ run.failed }}</td>
+        <td>
+          <span class="status-badge status-badge--{{ run.status }}">{{ run.status }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card empty-state">
+  <p>No scrape runs yet. Start one from the <a href="/">Scrape</a> page.</p>
+</div>
+{% endif %}
+
+{% endblock %}
