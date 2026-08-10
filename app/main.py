@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+from typing import Literal
 
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import HTMLResponse
@@ -23,12 +24,13 @@ class Scrape(BaseModel):
     limit: int
     tags: str | None = None
     blacklist_tags: str | None = None
+    rating: Literal['safe', 'sketchy', 'unsafe', ''] | None = None
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-def run_scrape(run_id, queue, limit, tags, blacklist_tags): #TODO: add rate_limit, source, rating, etc.
+def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating): #TODO: add rate_limit, source, etc.
 
     total = 0
     processed = 0
@@ -39,11 +41,11 @@ def run_scrape(run_id, queue, limit, tags, blacklist_tags): #TODO: add rate_limi
     if blacklist_tags: blacklist_tags = " ".join(blacklist_tags.split())
 
     logger.info('Scrape started')
-    run = db.create_run(run_id, 'gelbooru', tags, blacklist_tags, 'running')
+    run = db.create_run(run_id, 'gelbooru', tags, blacklist_tags, rating, 'running')
 
     try:
         # Send search with user parameters
-        scrape_results = gelbooru.search_posts(limit=limit, tags=tags, blacklist_tags=blacklist_tags)
+        scrape_results = gelbooru.search_posts(limit=limit, tags=tags, blacklist_tags=blacklist_tags, rating=rating)
         scrape_tags = set()
         unknown_tags = set()
         new_posts = []
@@ -151,5 +153,6 @@ async def scrape(background_tasks: BackgroundTasks, scrape: Scrape):
     job_id = str(uuid.uuid4())
     queue = asyncio.Queue()
     job_queues[job_id] = queue
-    background_tasks.add_task(run_scrape, job_id, queue, scrape.limit, scrape.tags, scrape.blacklist_tags)
+    scrape.rating = scrape.rating or None
+    background_tasks.add_task(run_scrape, job_id, queue, scrape.limit, scrape.tags, scrape.blacklist_tags, scrape.rating)
     return {"job_id": job_id}

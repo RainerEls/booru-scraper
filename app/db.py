@@ -67,6 +67,7 @@ class Runs(Base):
     source: Mapped[str] = mapped_column()
     tags: Mapped[str] = mapped_column(nullable=True)
     blacklist_tags: Mapped[str] = mapped_column(nullable=True)
+    rating: Mapped[str] = mapped_column(nullable=True)
     total: Mapped[int] = mapped_column(nullable=True)
     processed: Mapped[int] = mapped_column(nullable=True)
     skipped: Mapped[int] = mapped_column(nullable=True)
@@ -141,13 +142,14 @@ def get_runs():
         result = session.execute(get_entries).scalars().all()
     return result
 
-def create_run(uuid, source, tags, blacklist_tags, status):
+def create_run(uuid, source, tags, blacklist_tags, rating, status):
     with Session(engine) as session:
         run = Runs(
             uuid=uuid,
             source=source,
             tags=tags,
             blacklist_tags=blacklist_tags,
+            rating=rating,
             status=status
             )
         

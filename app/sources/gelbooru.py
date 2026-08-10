@@ -4,7 +4,7 @@ import time
 
 import requests
 
-from .. import config
+from .. import config, constants
 
 logger = logging.getLogger(__name__)
 
@@ -12,18 +12,22 @@ API_KEY = config.GELBOORU_API_KEY
 USER_ID = config.GELBOORU_USER_ID
 RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
 
+
 session = requests.session()
 session.params = {'api_key': API_KEY, 'user_id': USER_ID, 'json': 1}
 
-def search_posts(limit=5, tags='', blacklist_tags=''):
+def search_posts(limit=5, tags='', blacklist_tags='', rating=None):
 
     page = 1
     response_number = 100
     search_results = []
     bad_tags = ''
+    rated_search = ''
 
+    if rating:
+        rated_search = f'rating:{constants.FRONTEND_TO_GELBOORU_RATINGS.get(rating)}'
     if blacklist_tags: bad_tags = ["-" + tag for tag in blacklist_tags.split(" ")]
-    all_tags = " ".join(bad_tags) + " " + tags
+    all_tags = " ".join(bad_tags) + " " + tags + " " + rated_search
     logger.debug(str(all_tags))
     payloadPost = {'tags': all_tags, 'limit': min(limit, 100)}
 
