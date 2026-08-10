@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -49,6 +50,13 @@ def log_and_queue(queue, level, message, counters):
     getattr(logger, level)(message)
     queue.put_nowait({**counters, "log": message, "level": level})
 
+def deep_unescape(name, max_iter=5):
+    for _ in range(max_iter):
+        new = html.unescape(name)
+        if new == name:
+            return name
+        name = new
+    return name
 
 async def process_post(post, semaphore, lock, queue, counters):
     async with semaphore:
