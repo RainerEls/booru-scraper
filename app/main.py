@@ -45,13 +45,16 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 
+def log_and_queue(queue, level, message, counters):
+    getattr(logger, level)(message)
+    queue.put_nowait({**counters, "log": message, "level": level})
+
+
 async def process_post(post, semaphore, lock, queue, counters):
     async with semaphore:
         contentUrl = post["file_url"]
         tags = post["tags"]
-        safety = constants.GELBOORU_RATINGS_CONVERSIONS.get(
-            post["rating"], "sketchy"
-        )
+        safety = constants.GELBOORU_RATINGS_CONVERSIONS.get(post["rating"], "sketchy")
         booru_source = "gelbooru"
         source = post["source"]
         source_id = post["id"]
@@ -61,7 +64,7 @@ async def process_post(post, semaphore, lock, queue, counters):
         db_entry = await db.store_post(
             booru_source, source_id, None, md5, contentUrl, "queued"
         )
-        logger.debug(f"{db_entry} entry added")
+        logger.debug(f"{db_entry} db entry added")
         # Attempt to upload to szurubooru
         r = await szurubooru.upload_post(contentUrl, tags, safety, source)
         logger.debug("Attempting to upload post to szurubooru")
@@ -69,13 +72,13 @@ async def process_post(post, semaphore, lock, queue, counters):
         # Succeed: add the szurubooru post id to the db entry and update the entry status
         if r.status_code == 200:
             async with lock:
-                counters['processed'] += 1
+                counters["processed"] += 1
                 queue.put_nowait(
                     {
-                        "processed": counters['processed'],
-                        "skipped": counters['skipped'],
-                        "failed": counters['failed'],
-                        "total": counters['total'],
+                        "processed": counters["processed"],
+                        "skipped": counters["skipped"],
+                        "failed": counters["failed"],
+                        "total": counters["total"],
                         "log": "post processed",
                         "level": "debug",
                     }
@@ -84,17 +87,15 @@ async def process_post(post, semaphore, lock, queue, counters):
             await db.add_szurubooru_post_id(db_entry, r.json()["id"])
             await db.update_post_status(booru_source, source_id, "processed")
         # Fail: set status to failure
-        elif (
-            r.status_code == 400 and r.json()["name"] == "PostAlreadyUploadedError"
-        ):
+        elif r.status_code == 400 and r.json()["name"] == "PostAlreadyUploadedError":
             async with lock:
-                counters['skipped'] += 1
+                counters["skipped"] += 1
                 queue.put_nowait(
                     {
-                        "processed": counters['processed'],
-                        "skipped": counters['skipped'],
-                        "failed": counters['failed'],
-                        "total": counters['total'],
+                        "processed": counters["processed"],
+                        "skipped": counters["skipped"],
+                        "failed": counters["failed"],
+                        "total": counters["total"],
                         "log": "Skipped",
                         "level": "debug",
                     }
@@ -102,13 +103,13 @@ async def process_post(post, semaphore, lock, queue, counters):
             await db.update_post_status(booru_source, source_id, "skipped")
         else:
             async with lock:
-                counters['failed'] += 1
+                counters["failed"] += 1
                 queue.put_nowait(
                     {
-                        "processed": counters['processed'],
-                        "skipped": counters['skipped'],
-                        "failed": counters['failed'],
-                        "total": counters['total'],
+                        "processed": counters["processed"],
+                        "skipped": counters["skipped"],
+                        "failed": counters["failed"],
+                        "total": counters["total"],
                         "log": "post failed to process",
                         "level": "debug",
                     }
@@ -118,22 +119,24 @@ async def process_post(post, semaphore, lock, queue, counters):
             )
             await db.update_post_status(booru_source, source_id, "failed")
 
+
 async def run_scrape(
     run_id, queue, limit, tags, blacklist_tags, rating
 ):  # TODO: add rate_limit, source, etc.
 
-    total = 0
-    processed = 0
-    skipped = 0
-    failed = 0
+    counters = {"processed": 0, "skipped": 0, "failed": 0, "total": 0}
     run_status = "done"
     if tags:
         tags = " ".join(tags.split())
     if blacklist_tags:
         blacklist_tags = " ".join(blacklist_tags.split())
 
-    logger.info("Scrape started")
-    run = await db.create_run(run_id, "gelbooru", tags, blacklist_tags, rating, "running")
+    logger.info(
+        f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist Tags: [{blacklist_tags}]"
+    )
+    run = await db.create_run(
+        run_id, "gelbooru", tags, blacklist_tags, rating, "running"
+    )
 
     try:
         # Send search with user parameters
@@ -146,49 +149,24 @@ async def run_scrape(
 
         # Check if results exist in db by source->source_id: True = pass
         for result in scrape_results:
-            total += 1
-            queue.put_nowait(
-                {
-                    "processed": processed,
-                    "skipped": skipped,
-                    "failed": failed,
-                    "total": total,
-                    "log": f"Total {total}",
-                    "level": "debug",
-                }
-            )
+            counters["total"] += 1
+            log_and_queue(queue, "debug", "Total increased", counters)
             if await db.post_exists(source="gelbooru", source_post_id=result["id"]):
-                skipped += 1
-                queue.put_nowait(
-                    {
-                        "processed": processed,
-                        "skipped": skipped,
-                        "failed": failed,
-                        "total": total,
-                        "log": "post already exists in db. Skipping",
-                        "level": "debug",
-                    }
-                )
-                logger.debug(
-                    "Gelbooru: " + str(result["id"]) + " already exists in db. Skipping"
+                counters["skipped"] += 1
+                log_and_queue(
+                    queue,
+                    "debug",
+                    f"Gelbooru: {result['id']} already exists in DB. Skipping",
+                    counters,
                 )
             # MD5 check: True = store_post() skipped
             elif await db.md5_exists(md5=result["md5"]):
-                skipped += 1
-                queue.put_nowait(
-                    {
-                        "processed": processed,
-                        "skipped": skipped,
-                        "failed": failed,
-                        "total": total,
-                        "log": "md5 already exists in db. Skipping",
-                        "level": "debug",
-                    }
-                )
-                logger.debug(
-                    "MD5: "
-                    + str(result["md5"])
-                    + " already exists in db. Adding source entry and skipping."
+                counters["skipped"] += 1
+                log_and_queue(
+                    queue,
+                    "debug",
+                    f"MD5: {result['md5']} already exists in db. Adding source entry and skipping.",
+                    counters,
                 )
                 await db.store_post(
                     source="gelbooru",
@@ -212,6 +190,7 @@ async def run_scrape(
             if not await db.tag_exists(tag):
                 # Unknown tags -> new set
                 unknown_tags.add(tag)
+        log_and_queue(queue, "info", f"Total unknown tags: {unknown_tags}", counters)
 
         # Run grab_tags with new set
         if unknown_tags:
@@ -231,19 +210,33 @@ async def run_scrape(
         # Process all new posts
         semaphore = asyncio.Semaphore(int(config.CONCURRENT_UPLOADS))
         lock = asyncio.Lock()
-        counters = {'processed': processed, 'skipped': skipped, 'failed': failed, 'total': total}
-        await asyncio.gather(*[process_post(post, semaphore, lock, queue, counters) for post in new_posts])
-
-        processed += counters['processed']
-        skipped += counters['skipped']
-        failed += counters['failed']
-            
+        await asyncio.gather(
+            *[
+                process_post(post, semaphore, lock, queue, counters)
+                for post in new_posts
+            ],
+            return_exceptions=True,
+        )
+        log_and_queue(
+            queue,
+            "info",
+            f"Total: {counters['total']} - Processed: {counters['processed']} - Skipped: {counters['skipped']} - Failed: {counters['failed']}",
+            counters,
+        )
     except Exception as e:
         run_status = "error"
         logger.exception(f"Scrape failed: {e}")  # noqa: TRY401
     finally:
-        await db.update_run(run, total, processed, skipped, failed, run_status)
+        await db.update_run(
+            run,
+            counters["total"],
+            counters["processed"],
+            counters["skipped"],
+            counters["failed"],
+            run_status,
+        )
         queue.put_nowait({"status": run_status})
+        del job_queues[run_id]
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -253,7 +246,7 @@ async def root(request: Request):
 
 @app.get("/history", response_class=HTMLResponse)
 async def history(request: Request):
-    runs = db.get_runs()
+    runs = await db.get_runs()
     return templates.TemplateResponse(
         request=request, name="history.html", context={"runs": runs}
     )
