@@ -1,13 +1,41 @@
-import config
-import requests
+import base64
 
-API_KEY = config.API_KEY
-USER_ID = config.USER_ID
+import httpx
 
-s = requests.session()
-s.params = {'api_key': API_KEY, 'user_id': USER_ID, 'json': 1}
+from app import config
 
-payloadPost = {'limit': 1}
-payloadTags = {'limit': 1, 'order': 'DESC', 'orderBy': 'count'}
-r = s.get('https://gelbooru.com/index.php?page=dapi&s=tag&q=index', params=payloadTags)
-print(r.json())
+GELBOORU_API_KEY = config.GELBOORU_API_KEY
+GELBOORU_USER_ID = config.GELBOORU_USER_ID
+GELBOORU_RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
+
+SZURUBOORU_USER_ID = config.SZURUBOORU_USER_ID
+SZURUBOORU_API_TOKEN = config.SZURUBOORU_API_TOKEN
+SZURUBOORU_RATE_LIMIT = float(config.SZURUBOORU_RATE_LIMIT)
+
+szurubooru_session = None
+gelbooru_session = None
+
+szurubooru_token_auth_str = f"{SZURUBOORU_USER_ID}:{SZURUBOORU_API_TOKEN}".encode()
+szurubooru_token_auth = base64.b64encode(szurubooru_token_auth_str)
+
+
+async def create_clients():
+    global gelbooru_session, szurubooru_session
+
+    gelbooru_session = httpx.AsyncClient(
+        params={"api_key": GELBOORU_API_KEY, "user_id": GELBOORU_USER_ID, "json": 1}
+    )
+
+    szurubooru_session = httpx.AsyncClient(
+        headers={
+            "Authorization": "Token " + szurubooru_token_auth.decode(encoding="utf-8"),
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        timeout=30.0
+    )
+
+
+async def close_clients():
+    await gelbooru_session.aclose()
+    await szurubooru_session.aclose()

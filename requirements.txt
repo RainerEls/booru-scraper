@@ -1,8 +1,10 @@
 psycopg2-binary
 python-dotenv
 requests
-SQLAlchemy
+sqlalchemy[asyncio]
 fastapi
 uvicorn
 jinja2
 pydantic
+httpx
+asyncpg
