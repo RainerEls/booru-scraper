@@ -30,14 +30,16 @@ templates = Jinja2Templates(directory="app/templates")
 
 def run_scrape(run_id, queue, limit, tags, blacklist_tags): #TODO: add rate_limit, source, rating, etc.
 
-    logger.info('Scrape started')
-    run = db.create_run(run_id, 'gelbooru', tags, blacklist_tags, 'running')
-
     total = 0
     processed = 0
     skipped = 0
     failed = 0
     run_status = 'done'
+    if tags: tags = " ".join(tags.split())
+    if blacklist_tags: blacklist_tags = " ".join(blacklist_tags.split())
+
+    logger.info('Scrape started')
+    run = db.create_run(run_id, 'gelbooru', tags, blacklist_tags, 'running')
 
     try:
         # Send search with user parameters
