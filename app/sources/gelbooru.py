@@ -1,3 +1,4 @@
+import html
 import logging
 import time
 
@@ -49,4 +50,6 @@ def grab_tags(tags):
         tag_results = r.json()['tag']
         tag_data.extend(tag_results)
         time.sleep(RATE_LIMIT)
-    return tag_data
+    
+    unescaped_tags = [{**tag, 'name': html.unescape(tag['name'])} for tag in tag_results]
+    return unescaped_tags
