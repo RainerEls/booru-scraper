@@ -44,4 +44,5 @@ def grab_tags(tags):
         r = session.get('https://gelbooru.com/index.php?page=dapi&s=tag&q=index', params=payloadTags)
         tag_results = r.json()['tag']
         tag_data.extend(tag_results)
+        time.sleep(RATE_LIMIT)
     return tag_data
