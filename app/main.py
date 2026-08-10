@@ -83,7 +83,7 @@ def run_scrape(run_id, queue, limit, tags, blacklist_tags): #TODO: add rate_limi
             for tag in new_tags:
                 logger.debug(f'Tag data: {tag}')
                 db.store_tag(tag_name=tag['name'], tag_type=tag['type'])
-                szurubooru.sync_tag(tag_name=tag['name'], tag_category=constants.GELBOORU_TAG_TYPES[tag['type']])
+                szurubooru.sync_tag(tag_name=tag['name'], tag_category=constants.GELBOORU_TAG_TYPES.get(tag['type'], 'general'))
         
         # Process all new posts
         for post in new_posts:
