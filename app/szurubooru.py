@@ -1,4 +1,5 @@
 import base64
+import time
 
 import requests
 
@@ -6,7 +7,7 @@ from app import config
 
 USER_ID = config.SZURUBOORU_USER_ID
 API_TOKEN = config.SZURUBOORU_API_TOKEN
-RATE_LIMIT = config.SZURUBOORU_RATE_LIMIT
+RATE_LIMIT = float(config.SZURUBOORU_RATE_LIMIT)
 
 token_auth_str = f"{USER_ID}:{API_TOKEN}".encode()
 token_auth = base64.b64encode(token_auth_str)
@@ -32,6 +33,7 @@ def update_tag(tag_name, tag_category, version):
     return r
 
 def sync_tag(tag_name, tag_category):
+    time.sleep(RATE_LIMIT)
     tag_exists = get_tag(tag_name=tag_name)
     if tag_exists.status_code == 200:
         update_tag(tag_name=tag_name, tag_category=tag_category, version=tag_exists.json()['version'])
@@ -39,6 +41,7 @@ def sync_tag(tag_name, tag_category):
         create_tag(tag_name=tag_name, tag_category=tag_category)
 
 def upload_post(contentUrl, tags, safety, source=None): #TODO: add support for pulling notes from other boorus
+    time.sleep(RATE_LIMIT)
     tags_list = tags.split(" ")
     payload = {'contentUrl': contentUrl, 'tags': tags_list, 'safety': safety}
     if source is not None:
