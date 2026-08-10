@@ -118,7 +118,6 @@ def tag_exists(tag_name):
 def store_tag(tag_name, tag_type):
     with Session(engine) as session:
         save_tag = Tags(tag=tag_name, type=tag_type)
-
         session.add(save_tag)
         session.commit()
 
@@ -131,10 +130,10 @@ def add_szurubooru_post_id(id, szurubooru_post_id):
 
 def update_post_status(source, source_post_id, status):
     with Session(engine) as session:
-            find_post = select(Posts).where(Posts.source == source, Posts.source_post_id == source_post_id)
-            post_found = session.execute(find_post).scalar_one()
-            post_found.status = status
-            session.commit()
+        find_post = select(Posts).where(Posts.source == source, Posts.source_post_id == source_post_id)
+        post_found = session.execute(find_post).scalar_one()
+        post_found.status = status
+        session.commit()
 
 def get_runs():
     with Session(engine) as session:
