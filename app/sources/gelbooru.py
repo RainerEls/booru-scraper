@@ -1,8 +1,11 @@
+import logging
 import time
 
 import requests
 
 from .. import config
+
+logger = logging.getLogger(__name__)
 
 API_KEY = config.GELBOORU_API_KEY
 USER_ID = config.GELBOORU_USER_ID
@@ -20,6 +23,7 @@ def search_posts(limit=5, tags='', blacklist_tags=''):
 
     if blacklist_tags: bad_tags = ["-" + tag for tag in blacklist_tags.split(" ")]
     all_tags = " ".join(bad_tags) + " " + tags
+    logger.debug(str(all_tags))
     payloadPost = {'tags': all_tags, 'limit': min(limit, 100)}
 
     while response_number >= 100 and limit >= len(search_results):

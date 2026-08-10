@@ -55,8 +55,8 @@
         <label for="blacklist">Blacklisted Tags</label>
         <input
           type="text"
-          id="blacklist"
-          name="blacklist"
+          id="blacklist_tags"
+          name="blacklist_tags"
           placeholder="space separated · e.g. gore violence"
           autocomplete="off"
           spellcheck="false"
@@ -148,7 +148,7 @@
       rating:    document.getElementById('rating').value,
       limit:     parseInt(document.getElementById('limit').value),
       tags:      document.getElementById('tags').value.trim(),
-      blacklist: document.getElementById('blacklist').value.trim(),
+      blacklist_tags: document.getElementById('blacklist_tags').value.trim(),
     };
 
     // Reset UI
