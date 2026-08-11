@@ -12,7 +12,6 @@ RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
 async def search_posts(limit=5, tags="", blacklist_tags="", rating=None):
 
     page = 1
-    response_number = 100
     search_results = []
     bad_tags = ""
     rated_search = ""
@@ -24,7 +23,7 @@ async def search_posts(limit=5, tags="", blacklist_tags="", rating=None):
     all_tags = " ".join(bad_tags) + " " + tags + " " + rated_search
     logger.debug(str(all_tags))
 
-    while response_number >= 100 and limit >= len(search_results):
+    while limit >= len(search_results):
         payloadPost = {
             "tags": all_tags,
             "limit": 100,
@@ -36,17 +35,24 @@ async def search_posts(limit=5, tags="", blacklist_tags="", rating=None):
         r = await http.gelbooru_session.get(
             "https://gelbooru.com/index.php", params=payloadPost
         )
+        r_json = r.json()
         logger.debug(f"Search Post Status Code: {r.status_code}")
         logger.debug(f"Search Post Raw: {r.text}")
-        page_results = r.json()["post"]
-        response_number = len(page_results)
+        page_results = r_json.get("post", [])
+        total_count = r_json["@attributes"]["count"]
         page += 1
         search_results.extend(page_results)
+
+        if len(search_results) >= total_count:
+            break
+
         await asyncio.sleep(RATE_LIMIT)
     
     # Will *hopefully* fix the escaped tags in szurubooru posts
-    for post in search_results:
-        post["tags"] = " ".join(html.unescape(t) for t in post["tags"].split(" "))
+    search_results = [
+        {**post, "tags": " ".join(html.unescape(t) for t in post["tags"].split(" "))}
+        for post in search_results
+    ]
     return search_results[:limit]
 
 
