@@ -2,7 +2,7 @@ import asyncio
 import html
 import logging
 
-from .. import config, constants, http, main
+from .. import config, constants, http
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,6 @@ async def grab_tags(tags):
         await asyncio.sleep(RATE_LIMIT)
 
     unescaped_tags = [
-        {**tag, "name": main.deep_unescape(tag["name"])} for tag in tag_data
+        {**tag, "name": html.unescape(tag["name"])} for tag in tag_data
     ]
     return unescaped_tags

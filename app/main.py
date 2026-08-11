@@ -1,5 +1,4 @@
 import asyncio
-import html
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -50,13 +49,6 @@ def log_and_queue(queue, level, message, counters):
     getattr(logger, level)(message)
     queue.put_nowait({**counters, "log": message, "level": level})
 
-def deep_unescape(name, max_iter=5):
-    for _ in range(max_iter):
-        new = html.unescape(name)
-        if new == name:
-            return name
-        name = new
-    return name
 
 async def process_post(post, semaphore, lock, queue, counters):
     async with semaphore:
@@ -127,10 +119,8 @@ async def process_post(post, semaphore, lock, queue, counters):
             )
             await db.update_post_status(booru_source, source_id, "failed")
 
-
-async def run_scrape(
-    run_id, queue, limit, tags, blacklist_tags, rating
-):  # TODO: add rate_limit, source, etc.
+# TODO: add rate_limit, source, etc.
+async def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating):
 
     counters = {"processed": 0, "skipped": 0, "failed": 0, "total": 0}
     run_status = "done"
