@@ -43,6 +43,10 @@ async def search_posts(limit=5, tags="", blacklist_tags="", rating=None):
         page += 1
         search_results.extend(page_results)
         await asyncio.sleep(RATE_LIMIT)
+    
+    # Will *hopefully* fix the escaped tags in szurubooru posts
+    for post in search_results:
+        post["tags"] = " ".join(html.unescape(t) for t in post["tags"].split(" "))
     return search_results[:limit]
 
 
