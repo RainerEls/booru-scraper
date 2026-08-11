@@ -23,7 +23,7 @@ async def search_posts(limit=5, tags="", blacklist_tags="", rating=None):
     all_tags = " ".join(bad_tags) + " " + tags + " " + rated_search
     logger.debug(str(all_tags))
 
-    while limit >= len(search_results):
+    while limit > len(search_results):
         payloadPost = {
             "tags": all_tags,
             "limit": 100,
@@ -43,12 +43,11 @@ async def search_posts(limit=5, tags="", blacklist_tags="", rating=None):
         page += 1
         search_results.extend(page_results)
 
-        if len(search_results) >= total_count:
+        if not page_results or len(search_results) >= total_count:
             break
 
         await asyncio.sleep(RATE_LIMIT)
     
-    # Will *hopefully* fix the escaped tags in szurubooru posts
     search_results = [
         {**post, "tags": " ".join(html.unescape(t) for t in post["tags"].split(" "))}
         for post in search_results
