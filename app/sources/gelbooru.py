@@ -11,7 +11,7 @@ RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
 
 async def search_posts(limit=5, tags="", blacklist_tags="", rating=None):
 
-    page = 1
+    page = 0
     search_results = []
     bad_tags = ""
     rated_search = ""
