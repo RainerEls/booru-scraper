@@ -298,10 +298,16 @@ select { cursor: pointer; appearance: none;
 .history-table td.red   { color: var(--red); }
 .time-cell { color: var(--text-3); font-size: 12px; }
 .tags-cell {
-  max-width: 260px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--text);
+  min-width: 140px; max-width: 220px;
+  white-space: normal; word-break: break-word;
+  color: var(--text); line-height: 1.6;
 }
+.blacklist-cell {
+  min-width: 140px; max-width: 220px;
+  white-space: normal; word-break: break-word;
+  color: var(--red); opacity: .8; line-height: 1.6;
+}
+.card--flush { overflow-x: auto; }
 
 /* ── empty state ─────────────────────────────────────────────── */
 .empty-state {

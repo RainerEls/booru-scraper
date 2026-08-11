@@ -17,6 +17,7 @@
         <th>Time</th>
         <th>Source</th>
         <th>Tags</th>
+        <th>Blacklisted</th>
         <th class="num">Total</th>
         <th class="num">Uploaded</th>
         <th class="num">Skipped</th>
@@ -29,7 +30,8 @@
       <tr>
         <td class="mono time-cell">{{ run.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
         <td>{{ run.source }}</td>
-        <td class="tags-cell">{{ run.tags or '—' }}</td>
+        <td class="tags-cell" title="{{ run.tags or '' }}">{{ run.tags or '—' }}</td>
+        <td class="blacklist-cell" title="{{ run.blacklist_tags or '' }}">{{ run.blacklist_tags or '—' }}</td>
         <td class="num">{{ run.total }}</td>
         <td class="num green">{{ run.processed }}</td>
         <td class="num amber">{{ run.skipped }}</td>

@@ -140,6 +140,30 @@
 
   let eventSource = null;
 
+  // Persist form values across page loads
+  const PERSIST_KEYS = ['source', 'rating', 'limit', 'tags', 'blacklist_tags'];
+
+  function saveFormState() {
+    PERSIST_KEYS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) localStorage.setItem('booru_' + id, el.value);
+    });
+  }
+
+  function restoreFormState() {
+    PERSIST_KEYS.forEach(id => {
+      const saved = localStorage.getItem('booru_' + id);
+      const el = document.getElementById(id);
+      if (el && saved !== null) el.value = saved;
+    });
+  }
+
+  restoreFormState();
+  PERSIST_KEYS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', saveFormState);
+  });
+
   form.addEventListener('submit', function(e) {
     e.preventDefault();
 
