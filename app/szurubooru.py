@@ -60,7 +60,7 @@ async def sync_tag(tag_name, tag_category):
                     merge_to_version=clean_tag["version"],
                 )
     else:
-        await create_tag(tag_name=clean_tag, tag_category=tag_category)
+        await create_tag(tag_name=clean_name, tag_category=tag_category)
 
 
 # TODO: add support for pulling notes from other boorus
