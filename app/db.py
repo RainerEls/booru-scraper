@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     UniqueConstraint,
@@ -39,9 +39,9 @@ class Posts(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc)
     )
     status: Mapped[str] = mapped_column()
     source: Mapped[str] = mapped_column()
@@ -56,9 +56,9 @@ class Tags(Base):
     __table_args__ = (UniqueConstraint("tag"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc)
     )
     tag: Mapped[str] = mapped_column()
     type: Mapped[int] = mapped_column()
@@ -70,7 +70,7 @@ class Runs(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     uuid: Mapped[str] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
     source: Mapped[str] = mapped_column()
     tags: Mapped[str] = mapped_column(nullable=True)
     blacklist_tags: Mapped[str] = mapped_column(nullable=True)
