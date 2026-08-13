@@ -52,72 +52,88 @@ def log_and_queue(queue, level, message, counters):
 
 async def process_post(post, semaphore, lock, queue, counters):
     async with semaphore:
-        contentUrl = post["file_url"]
-        tags = post["tags"]
-        safety = constants.GELBOORU_RATINGS_CONVERSIONS.get(post["rating"], "sketchy")
-        booru_source = "gelbooru"
-        source = post["source"]
         source_id = post["id"]
-        md5 = post["md5"]
+        try:
+            contentUrl = post["file_url"]
+            tags = post["tags"]
+            safety = constants.GELBOORU_RATINGS_CONVERSIONS.get(post["rating"], "sketchy")
+            booru_source = "gelbooru"
+            source = post["source"]
+            md5 = post["md5"]
 
-        # Store in db first
-        db_entry = await db.store_post(
-            booru_source, source_id, None, md5, contentUrl, "queued"
-        )
-        logger.debug(f"{db_entry} db entry added")
-        # Attempt to upload to szurubooru\
-        logger.debug("Attempting to upload post to szurubooru")
-        r = await szurubooru.upload_post(contentUrl, tags, safety, source)
+            # Store in db first
+            db_entry = await db.store_post(
+                booru_source, source_id, None, md5, contentUrl, "queued"
+            )
+            logger.debug(f"{db_entry} db entry added")
+            # Attempt to upload to szurubooru\
+            logger.debug("Attempting to upload post to szurubooru")
+            r = await szurubooru.upload_post(contentUrl, tags, safety, source)
+            error_code = r.json()["name"]
 
-        # Succeed: add the szurubooru post id to the db entry and update the entry status
-        if r.status_code == 200:
-            async with lock:
-                counters["processed"] += 1
-                queue.put_nowait(
-                    {
-                        "processed": counters["processed"],
-                        "skipped": counters["skipped"],
-                        "failed": counters["failed"],
-                        "total": counters["total"],
-                        "log": "post processed",
-                        "level": "debug",
-                    }
+            # Succeed: add the szurubooru post id to the db entry and update the entry status
+            if r.status_code == 200:
+                async with lock:
+                    counters["processed"] += 1
+                    queue.put_nowait(
+                        {
+                            "processed": counters["processed"],
+                            "skipped": counters["skipped"],
+                            "failed": counters["failed"],
+                            "total": counters["total"],
+                            "log": "post processed",
+                            "level": "debug",
+                        }
+                    )
+                    logger.info("Szurubooru post creation succeeded.")
+                await db.add_szurubooru_post_id(db_entry, r.json()["id"])
+                await db.update_post_status(booru_source, source_id, "processed")
+            # Fail: set status to failure
+            elif r.status_code == 400 and error_code == "PostAlreadyUploadedError":
+                async with lock:
+                    counters["skipped"] += 1
+                    queue.put_nowait(
+                        {
+                            "processed": counters["processed"],
+                            "skipped": counters["skipped"],
+                            "failed": counters["failed"],
+                            "total": counters["total"],
+                            "log": "Skipped",
+                            "level": "debug",
+                        }
+                    )
+                await db.update_post_status(booru_source, source_id, "skipped")
+            else:
+                async with lock:
+                    counters["failed"] += 1
+                    queue.put_nowait(
+                        {
+                            "processed": counters["processed"],
+                            "skipped": counters["skipped"],
+                            "failed": counters["failed"],
+                            "total": counters["total"],
+                            "log": f"Post {source_id} failed with status code: {r.status_code} {error_code}",
+                            "level": "warning",
+                        }
+                    )
+                logger.debug(
+                    f"Szurubooru creation failed with status code: {r.status_code}"
                 )
-                logger.info("Szurubooru post creation succeeded.")
-            await db.add_szurubooru_post_id(db_entry, r.json()["id"])
-            await db.update_post_status(booru_source, source_id, "processed")
-        # Fail: set status to failure
-        elif r.status_code == 400 and r.json()["name"] == "PostAlreadyUploadedError":
-            async with lock:
-                counters["skipped"] += 1
-                queue.put_nowait(
-                    {
-                        "processed": counters["processed"],
-                        "skipped": counters["skipped"],
-                        "failed": counters["failed"],
-                        "total": counters["total"],
-                        "log": "Skipped",
-                        "level": "debug",
-                    }
-                )
-            await db.update_post_status(booru_source, source_id, "skipped")
-        else:
+                await db.update_post_status(booru_source, source_id, "failed")
+        except Exception as e:
             async with lock:
                 counters["failed"] += 1
                 queue.put_nowait(
-                    {
-                        "processed": counters["processed"],
-                        "skipped": counters["skipped"],
-                        "failed": counters["failed"],
-                        "total": counters["total"],
-                        "log": "post failed to process",
-                        "level": "debug",
-                    }
+                        {
+                            "processed": counters["processed"],
+                            "skipped": counters["skipped"],
+                            "failed": counters["failed"],
+                            "total": counters["total"],
+                            "log": f"Unhandled error for post {source_id}: {e}",
+                            "level": "error",
+                        }
                 )
-            logger.debug(
-                f"Szurubooru creation failed with status code: {r.status_code}"
-            )
-            await db.update_post_status(booru_source, source_id, "failed")
+            logger.exception(f"Unhandled exception processing post {source_id}")
 
 # TODO: add rate_limit, source, etc.
 async def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating):
