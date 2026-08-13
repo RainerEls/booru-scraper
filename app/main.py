@@ -149,7 +149,7 @@ async def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating):
         f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist Tags: [{blacklist_tags}]"
     )
     run = await db.create_run(
-        run_id, "gelbooru", tags, blacklist_tags, rating, "running"
+        run_id, "gelbooru", tags, blacklist_tags, rating, limit, "running"
     )
 
     try:

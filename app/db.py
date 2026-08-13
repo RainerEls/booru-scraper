@@ -75,6 +75,7 @@ class Runs(Base):
     tags: Mapped[str] = mapped_column(nullable=True)
     blacklist_tags: Mapped[str] = mapped_column(nullable=True)
     rating: Mapped[str] = mapped_column(nullable=True)
+    limit: Mapped[int] = mapped_column()
     total: Mapped[int] = mapped_column(nullable=True)
     processed: Mapped[int] = mapped_column(nullable=True)
     skipped: Mapped[int] = mapped_column(nullable=True)
@@ -169,7 +170,7 @@ async def get_runs():
     return result
 
 
-async def create_run(uuid, source, tags, blacklist_tags, rating, status):
+async def create_run(uuid, source, tags, blacklist_tags, rating, limit, status):
     async with AsyncSession(engine, expire_on_commit=False) as session:
         run = Runs(
             uuid=uuid,
@@ -177,6 +178,7 @@ async def create_run(uuid, source, tags, blacklist_tags, rating, status):
             tags=tags,
             blacklist_tags=blacklist_tags,
             rating=rating,
+            limit=limit,
             status=status,
         )
 
