@@ -261,18 +261,18 @@ async def scrape_progress(job_id):
 
 
 @app.post("/scrape")
-async def scrape(background_tasks: BackgroundTasks, scrape: Scrape):
+async def scrape(background_tasks: BackgroundTasks, scrape_request: Scrape):
     job_id = str(uuid.uuid4())
     queue = asyncio.Queue()
     job_queues[job_id] = queue
-    scrape.rating = scrape.rating or None
+    scrape_request.rating = scrape_request.rating or None
     background_tasks.add_task(
         run_scrape,
         job_id,
         queue,
-        scrape.limit,
-        scrape.tags,
-        scrape.blacklist_tags,
-        scrape.rating,
+        scrape_request.limit,
+        scrape_request.tags,
+        scrape_request.blacklist_tags,
+        scrape_request.rating,
     )
     return {"job_id": job_id}
