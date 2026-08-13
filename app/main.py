@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
 
 
 class Scrape(BaseModel):
-    source: str
+    source: constants.Source | None = "Unknown"
     limit: int
     tags: str | None = None
     blacklist_tags: str | None = None
