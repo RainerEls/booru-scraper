@@ -209,8 +209,22 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    .then(res => res.json())
+    .then(res => {
+      if (!res.ok) {
+        res.json().then(err => {
+          console.error('Scrape request failed:' err);
+          submitBtn.disabled = false;
+          submitLabel.textContent = 'Start Scrape';
+          statusBadge.className = 'status-badge status-badge--error';
+          statusBadge.textContent = 'Request failed';
+          progressSection.classList.remove('hidden');
+        });
+        return;
+      }
+      return res.json();
+    })
     .then(data => {
+      if (!data) return;
       console.log(data)
       const jobId = data.job_id;
 
