@@ -16,7 +16,6 @@
       <div class="form-group">
         <label for="source">Source</label>
         <select id="source" name="source">
-          <option value="gelbooru">Gelbooru</option>
         </select>
       </div>
 
@@ -130,6 +129,7 @@
   const progressPct = document.getElementById('progress-pct');
   const logOutput = document.getElementById('log-output');
   const statusBadge = document.getElementById('run-status-badge');
+  const sourceSelect = document.getElementById('source');
 
   const counts = {
     processed: document.getElementById('count-processed'),
@@ -157,6 +157,20 @@
       if (el && saved !== null) el.value = saved;
     });
   }
+
+  fetch('/api/sources')
+  .then(res => res.json())
+  .then(sources => {
+    sourceSelect.innerHTML = '';
+    sources.forEach(source => {
+      const option = document.createElement('option');
+      option.value = source;
+      option.textContent = source.charAt(0).toUpperCase() + source.slice(1);
+      sourceSelect.appendChild(option);
+    });
+    const saved = localStorage.getItem('booru_source');
+    if (saved) sourceSelect.value = saved;
+  });
 
   restoreFormState();
   PERSIST_KEYS.forEach(id => {
@@ -195,8 +209,22 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    .then(res => res.json())
+    .then(res => {
+      if (!res.ok) {
+        res.json().then(err => {
+          console.error('Scrape request failed:', err);
+          submitBtn.disabled = false;
+          submitLabel.textContent = 'Start Scrape';
+          statusBadge.className = 'status-badge status-badge--error';
+          statusBadge.textContent = 'Request failed';
+          progressSection.classList.remove('hidden');
+        });
+        return;
+      }
+      return res.json();
+    })
     .then(data => {
+      if (!data) return;
       console.log(data)
       const jobId = data.job_id;
 
