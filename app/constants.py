@@ -8,5 +8,5 @@ FRONTEND_TO_GELBOORU_RATINGS = {
     'unsafe': 'explicit'
 }
 class Source(StrEnum):
-    GELBOORU = "Gelbooru"
-    DANBOORU = "Danbooru"
+    GELBOORU = "gelbooru"
+    DANBOORU = "danbooru"

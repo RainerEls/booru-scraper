@@ -16,7 +16,6 @@
       <div class="form-group">
         <label for="source">Source</label>
         <select id="source" name="source">
-          <option value="gelbooru">Gelbooru</option>
         </select>
       </div>
 
@@ -130,6 +129,7 @@
   const progressPct = document.getElementById('progress-pct');
   const logOutput = document.getElementById('log-output');
   const statusBadge = document.getElementById('run-status-badge');
+  const sourceSelect = document.getElementById('source');
 
   const counts = {
     processed: document.getElementById('count-processed'),
@@ -157,6 +157,20 @@
       if (el && saved !== null) el.value = saved;
     });
   }
+
+  fetch('/api/sources')
+  .then(res => res.json())
+  .then(sources => {
+    sourceSelect.innerHTML = '';
+    sources.forEach(source => {
+      const option = document.createElement('option');
+      option.value = source;
+      option.textContent = source.charAt(0).toUpperCase() + source.slice(1);
+      sourceSelect.appendChild(option);
+    });
+    const saved = localStorage.getItem('booru_source');
+    if (saved) sourceSelect.value = saved;
+  });
 
   restoreFormState();
   PERSIST_KEYS.forEach(id => {

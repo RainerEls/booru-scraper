@@ -39,9 +39,12 @@ class Posts(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc)
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
     )
     status: Mapped[str] = mapped_column()
     source: Mapped[str] = mapped_column()
@@ -56,9 +59,12 @@ class Tags(Base):
     __table_args__ = (UniqueConstraint("tag"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc)
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
     )
     tag: Mapped[str] = mapped_column()
     type: Mapped[int] = mapped_column()
@@ -70,12 +76,14 @@ class Runs(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     uuid: Mapped[str] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
     source: Mapped[str] = mapped_column()
     tags: Mapped[str] = mapped_column(nullable=True)
     blacklist_tags: Mapped[str] = mapped_column(nullable=True)
     rating: Mapped[str] = mapped_column(nullable=True)
-    limit: Mapped[int] = mapped_column()
+    post_limit: Mapped[int] = mapped_column(nullable=True)
     total: Mapped[int] = mapped_column(nullable=True)
     processed: Mapped[int] = mapped_column(nullable=True)
     skipped: Mapped[int] = mapped_column(nullable=True)
@@ -90,8 +98,10 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+
 async def close_db():
     await engine.dispose()
+
 
 async def post_exists(source, source_post_id):
     async with AsyncSession(engine, expire_on_commit=False) as session:
@@ -170,7 +180,7 @@ async def get_runs():
     return result
 
 
-async def create_run(uuid, source, tags, blacklist_tags, rating, limit, status):
+async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, status):
     async with AsyncSession(engine, expire_on_commit=False) as session:
         run = Runs(
             uuid=uuid,
@@ -178,7 +188,7 @@ async def create_run(uuid, source, tags, blacklist_tags, rating, limit, status):
             tags=tags,
             blacklist_tags=blacklist_tags,
             rating=rating,
-            limit=limit,
+            post_limit=post_limit,
             status=status,
         )
 

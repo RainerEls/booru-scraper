@@ -12,11 +12,12 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from app import config, constants, db, http, szurubooru
-
-from .sources import gelbooru
+from app.sources.gelbooru import GelbooruSource
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.getLevelName(config.LOGLEVEL))
+
+SOURCES = {"gelbooru": GelbooruSource()}
 
 job_queues = {}
 
@@ -50,28 +51,25 @@ def log_and_queue(queue, level, message, counters):
     queue.put_nowait({**counters, "log": message, "level": level})
 
 
-async def process_post(post, semaphore, lock, queue, counters):
+async def process_post(booru_source, post, semaphore, lock, queue, counters):
     async with semaphore:
         source_id = post["id"]
         try:
             contentUrl = post["file_url"]
             tags = post["tags"]
-            safety = constants.GELBOORU_RATINGS_CONVERSIONS.get(post["rating"], "sketchy")
-            booru_source = "gelbooru"
+            safety = constants.GELBOORU_RATINGS_CONVERSIONS.get(
+                post["rating"], "sketchy"
+            )
             source = post["source"]
             md5 = post["md5"]
 
-            # Store in db first
             db_entry = await db.store_post(
                 booru_source, source_id, None, md5, contentUrl, "queued"
             )
             logger.debug(f"{db_entry} db entry added")
-            # Attempt to upload to szurubooru\
             logger.debug("Attempting to upload post to szurubooru")
             r = await szurubooru.upload_post(contentUrl, tags, safety, source)
-            error_code = r.json()["name"]
 
-            # Succeed: add the szurubooru post id to the db entry and update the entry status
             if r.status_code == 200:
                 async with lock:
                     counters["processed"] += 1
@@ -88,8 +86,7 @@ async def process_post(post, semaphore, lock, queue, counters):
                     logger.info("Szurubooru post creation succeeded.")
                 await db.add_szurubooru_post_id(db_entry, r.json()["id"])
                 await db.update_post_status(booru_source, source_id, "processed")
-            # Fail: set status to failure
-            elif r.status_code == 400 and error_code == "PostAlreadyUploadedError":
+            elif r.status_code == 400 and r.json().get("name") == "PostAlreadyUploadedError":
                 async with lock:
                     counters["skipped"] += 1
                     queue.put_nowait(
@@ -104,6 +101,7 @@ async def process_post(post, semaphore, lock, queue, counters):
                     )
                 await db.update_post_status(booru_source, source_id, "skipped")
             else:
+                error_code = r.json()["name", "Unknown"]
                 async with lock:
                     counters["failed"] += 1
                     queue.put_nowait(
@@ -124,20 +122,21 @@ async def process_post(post, semaphore, lock, queue, counters):
             async with lock:
                 counters["failed"] += 1
                 queue.put_nowait(
-                        {
-                            "processed": counters["processed"],
-                            "skipped": counters["skipped"],
-                            "failed": counters["failed"],
-                            "total": counters["total"],
-                            "log": f"Unhandled error for post {source_id}: {e}",
-                            "level": "error",
-                        }
+                    {
+                        "processed": counters["processed"],
+                        "skipped": counters["skipped"],
+                        "failed": counters["failed"],
+                        "total": counters["total"],
+                        "log": f"Unhandled error for post {source_id}: {e}",
+                        "level": "error",
+                    }
                 )
             logger.exception(f"Unhandled exception processing post {source_id}")
 
-# TODO: add rate_limit, source, etc.
-async def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating):
 
+async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, rating):
+
+    source = SOURCES[booru_source]
     counters = {"processed": 0, "skipped": 0, "failed": 0, "total": 0}
     run_status = "done"
     if tags:
@@ -149,19 +148,17 @@ async def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating):
         f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist Tags: [{blacklist_tags}]"
     )
     run = await db.create_run(
-        run_id, "gelbooru", tags, blacklist_tags, rating, limit, "running"
+        run_id, booru_source, tags, blacklist_tags, rating, limit, "running"
     )
 
     try:
-        # Send search with user parameters
-        scrape_results = await gelbooru.search_posts(
+        scrape_results = await source.search_posts(
             limit=limit, tags=tags, blacklist_tags=blacklist_tags, rating=rating
         )
         scrape_tags = set()
         unknown_tags = set()
         new_posts = []
 
-        # Check if results exist in db by source->source_id: True = pass
         for result in scrape_results:
             counters["total"] += 1
             log_and_queue(queue, "debug", "Total increased", counters)
@@ -173,7 +170,6 @@ async def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating):
                     f"Gelbooru: {result['id']} already exists in DB. Skipping",
                     counters,
                 )
-            # MD5 check: True = store_post() skipped
             elif await db.md5_exists(md5=result["md5"]):
                 counters["skipped"] += 1
                 log_and_queue(
@@ -190,27 +186,20 @@ async def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating):
                     image_url=result["file_url"],
                     status="skipped",
                 )
-            # Otherwise: Begin processing
             else:
-                # Pool tags into a set
                 scrape_tags.update(result["tags"].split(" "))
                 logger.debug(result["tags"].split(" "))
-                # Pool new posts into a list
                 new_posts.append(result)
                 logger.debug(f"Appended: {result}")
 
-        # Check each tag against db
         for tag in scrape_tags:
             if not await db.tag_exists(tag):
-                # Unknown tags -> new set
                 unknown_tags.add(tag)
         log_and_queue(queue, "info", f"Total unknown tags: {unknown_tags}", counters)
 
-        # Run grab_tags with new set
         if unknown_tags:
             logger.info("Grabbing unknown tags")
-            new_tags = await gelbooru.grab_tags(unknown_tags)
-            # For loop takes data from grab_tags and saves to db
+            new_tags = await source.grab_tags(unknown_tags)
             for tag in new_tags:
                 logger.debug(f"Tag data: {tag}")
                 await db.store_tag(tag_name=tag["name"], tag_type=tag["type"])
@@ -221,12 +210,11 @@ async def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating):
                     ),
                 )
 
-        # Process all new posts
         semaphore = asyncio.Semaphore(int(config.CONCURRENT_UPLOADS))
         lock = asyncio.Lock()
         await asyncio.gather(
             *[
-                process_post(post, semaphore, lock, queue, counters)
+                process_post(booru_source, post, semaphore, lock, queue, counters)
                 for post in new_posts
             ],
             return_exceptions=True,
@@ -256,6 +244,10 @@ async def run_scrape(run_id, queue, limit, tags, blacklist_tags, rating):
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
+
+@app.get("/api/sources")
+async def get_sources():
+    return list(SOURCES.keys())
 
 
 @app.get("/history", response_class=HTMLResponse)
@@ -287,6 +279,7 @@ async def scrape(background_tasks: BackgroundTasks, scrape_request: Scrape):
         job_id,
         queue,
         scrape_request.limit,
+        scrape_request.source,
         scrape_request.tags,
         scrape_request.blacklist_tags,
         scrape_request.rating,

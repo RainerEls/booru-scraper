@@ -18,6 +18,7 @@
         <th>Source</th>
         <th>Tags</th>
         <th>Blacklisted</th>
+        <th>Limit</th>
         <th class="num">Total</th>
         <th class="num">Uploaded</th>
         <th class="num">Skipped</th>
@@ -32,6 +33,7 @@
         <td>{{ run.source }}</td>
         <td class="tags-cell" title="{{ run.tags or '' }}">{{ run.tags or '—' }}</td>
         <td class="blacklist-cell" title="{{ run.blacklist_tags or '' }}">{{ run.blacklist_tags or '—' }}</td>
+        <td class="num">{{ run.post_limit }}</td>
         <td class="num">{{ run.total }}</td>
         <td class="num green">{{ run.processed }}</td>
         <td class="num amber">{{ run.skipped }}</td>
