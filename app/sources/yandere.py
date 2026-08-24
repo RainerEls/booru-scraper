@@ -88,13 +88,13 @@ class YandereSource(BooruSource):
         return unescaped_tags
 
 
-session = requests.session()
-session.params = {'limit': 1, 'page': 0, 'tags': 'cat'}
+# session = requests.session()
+# session.params = {'limit': 1, 'page': 0, 'tags': 'cat'}
 
-def search_posts():
-    r = session.get("https://yande.re/post.json")
-    print(r.text)
-    print(r.status_code)
-    # return r.text
+# def search_posts():
+#     r = session.get("https://yande.re/post.json")
+#     print(r.text)
+#     print(r.status_code)
+#     # return r.text
 
-search_posts()
+# search_posts()
