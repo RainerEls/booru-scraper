@@ -62,13 +62,16 @@ async def process_post(booru_source, post, semaphore, lock, queue, counters):
             )
             source = post["source"]
             md5 = post["md5"]
+            image_width = post["width"]
+            image_height = post["height"]
+            notes = post.get("notes") # Uses .get() because most posts won't have notes added and will raise a KeyError
 
             db_entry = await db.store_post(
                 booru_source, source_id, None, md5, contentUrl, "queued"
             )
             logger.debug(f"{db_entry} db entry added")
             logger.debug("Attempting to upload post to szurubooru")
-            r = await szurubooru.upload_post(contentUrl, tags, safety, source)
+            r = await szurubooru.upload_post(contentUrl, tags, safety, image_width, image_height, source, notes)
 
             if r.status_code == 200:
                 async with lock:

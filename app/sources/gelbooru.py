@@ -1,6 +1,8 @@
 import asyncio
 import html
 import logging
+import re
+import xml.etree.ElementTree as ET
 
 from app import config, constants, http
 from app.sources.base import BooruSource
@@ -8,6 +10,32 @@ from app.sources.base import BooruSource
 logger = logging.getLogger(__name__)
 
 RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
+
+_TAG_PAIRS = [
+    (r"<b>|<strong>", r"</b>|</strong>", "**"),
+    (r"<i>|<em>", r"</i>|</em>", "*"),
+    (r"<s>|<del>", r"</s>|</del>", "~~"),
+]
+
+_ESCAPE_CHARS = '\\*_`[]'
+_MD_ESCAPE = re.compile('([' + re.escape(_ESCAPE_CHARS) + '])')
+
+def html_note_to_markdown(text):
+    text = _MD_ESCAPE.sub(r"\\\1", text)
+    text = re.sub(r"<br\s*/?>", "\n", text)
+    text = re.sub(r"</?span[^>]*>", "", text)
+
+    closers = ""
+    for open_pat, close_pat, marker in _TAG_PAIRS:
+        opens = len(re.findall(open_pat, text, re.IGNORECASE))
+        closes = len(re.findall(close_pat, text, re.IGNORECASE))
+        text = re.sub(open_pat, marker, text, flags=re.IGNORECASE)
+        text = re.sub(close_pat, marker, text, flags=re.IGNORECASE)
+        if opens > closes:
+            closers += marker * (opens - closes)
+
+    text = re.sub(r"<[^>]+>", "", text)
+    return text + closers
 
 class GelbooruSource(BooruSource):
     async def search_posts(self, limit=5, tags="", blacklist_tags="", rating=None):
@@ -18,7 +46,9 @@ class GelbooruSource(BooruSource):
         rated_search = ""
 
         if rating:
-            rated_search = f"rating:{constants.FRONTEND_TO_GELBOORU_RATINGS.get(rating)}"
+            rated_search = (
+                f"rating:{constants.FRONTEND_TO_GELBOORU_RATINGS.get(rating)}"
+            )
         if blacklist_tags:
             bad_tags = ["-" + tag for tag in blacklist_tags.split(" ")]
         all_tags = " ".join(bad_tags) + " " + tags + " " + rated_search
@@ -48,13 +78,20 @@ class GelbooruSource(BooruSource):
                 break
 
             await asyncio.sleep(RATE_LIMIT)
-        
-        search_results = [
-            {**post, "tags": " ".join(html.unescape(t) for t in post["tags"].split(" "))}
-            for post in search_results
-        ]
-        return search_results[:limit]
 
+        search_results = search_results[:limit]
+        final_results = []
+        for post in search_results:
+            post = {
+                **post,
+                "tags": " ".join(html.unescape(t) for t in post["tags"].split(" ")),
+            }
+            if post.get("has_notes") == "true":
+                post["notes"] = await self.grab_notes(post["id"])
+                logger.debug(f"Notes: {post["notes"]}")
+                await asyncio.sleep(RATE_LIMIT)
+            final_results.append(post)
+        return final_results
 
     async def grab_tags(self, tags):
 
@@ -82,3 +119,38 @@ class GelbooruSource(BooruSource):
             {**tag, "name": html.unescape(tag["name"])} for tag in tag_data
         ]
         return unescaped_tags
+
+    async def grab_notes(self, id):
+        payloadNote = {
+            "page": "dapi",
+            "s": "note",
+            "q": "index",
+            "post_id": id,
+        }
+        r = await http.gelbooru_session.get(
+            "https://gelbooru.com/index.php", params=payloadNote
+        )
+        root = ET.fromstring(r.text)
+        return [
+            {
+                "x": int(note.get("x")),
+                "y": int(note.get("y")),
+                "width": int(note.get("width")),
+                "height": int(note.get("height")),
+                "body": html_note_to_markdown(note.get("body")),
+            }
+            for note in root.findall("note")
+            if int(note.get("width")) and int(note.get("height"))
+        ]
+
+
+if __name__ == "__main__":
+
+    async def _test():
+        await http.create_clients()
+        source = GelbooruSource()
+        results = await source.search_posts(limit=1000, tags="cat")
+        await http.close_clients()
+        return results
+
+    asyncio.run(_test())
