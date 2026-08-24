@@ -83,7 +83,7 @@ async def upload_post(
                         [(x + w) / image_width, (y + h) / image_height],
                         [(x + w) / image_width, y / image_height],
                     ],
-                    "text": note["body"]
+                    "text": note["body"],
                 }
             )
     r = await http.szurubooru_session.post(f"{BASE_URL}/posts/", json=payload)
