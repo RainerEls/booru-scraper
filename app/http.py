@@ -20,11 +20,7 @@ szurubooru_token_auth = base64.b64encode(szurubooru_token_auth_str)
 
 
 async def create_clients():
-    global gelbooru_session, szurubooru_session
-
-    gelbooru_session = httpx.AsyncClient(
-        params={"api_key": GELBOORU_API_KEY, "user_id": GELBOORU_USER_ID, "json": 1}
-    )
+    global szurubooru_session, gelbooru_session, yandere_session
 
     szurubooru_session = httpx.AsyncClient(
         headers={
@@ -35,7 +31,16 @@ async def create_clients():
         timeout=30.0
     )
 
+    gelbooru_session = httpx.AsyncClient(
+        params={"api_key": GELBOORU_API_KEY, "user_id": GELBOORU_USER_ID, "json": 1}
+    )
+
+    yandere_session = httpx.AsyncClient()
+
+    
+
 
 async def close_clients():
-    await gelbooru_session.aclose()
     await szurubooru_session.aclose()
+    await gelbooru_session.aclose()
+    await yandere_session.aclose()
