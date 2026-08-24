@@ -17,8 +17,9 @@ _TAG_PAIRS = [
     (r"<s>|<del>", r"</s>|</del>", "~~"),
 ]
 
-_ESCAPE_CHARS = '\\*_`[]'
-_MD_ESCAPE = re.compile('([' + re.escape(_ESCAPE_CHARS) + '])')
+_ESCAPE_CHARS = "\\*_`[]"
+_MD_ESCAPE = re.compile("([" + re.escape(_ESCAPE_CHARS) + "])")
+
 
 def html_note_to_markdown(text):
     text = _MD_ESCAPE.sub(r"\\\1", text)
@@ -36,6 +37,7 @@ def html_note_to_markdown(text):
 
     text = re.sub(r"<[^>]+>", "", text)
     return text + closers
+
 
 class GelbooruSource(BooruSource):
     async def search_posts(self, limit=5, tags="", blacklist_tags="", rating=None):
@@ -88,7 +90,7 @@ class GelbooruSource(BooruSource):
             }
             if post.get("has_notes") == "true":
                 post["notes"] = await self.grab_notes(post["id"])
-                logger.debug(f"Notes: {post["notes"]}")
+                logger.debug(f"Notes: {post['notes']}")
                 await asyncio.sleep(RATE_LIMIT)
             final_results.append(post)
         return final_results
@@ -142,15 +144,3 @@ class GelbooruSource(BooruSource):
             for note in root.findall("note")
             if int(note.get("width")) and int(note.get("height"))
         ]
-
-
-if __name__ == "__main__":
-
-    async def _test():
-        await http.create_clients()
-        source = GelbooruSource()
-        results = await source.search_posts(limit=1000, tags="cat")
-        await http.close_clients()
-        return results
-
-    asyncio.run(_test())
