@@ -24,6 +24,7 @@ job_queues = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    config.validate()
     await http.create_clients()
     await db.init_db()
 
