@@ -10,11 +10,11 @@ load_dotenv()
 
 LOGLEVEL = os.getenv("LOGLEVEL", "INFO")
 
-DB_USER = os.getenv("DB_USER", "changeme")
-DB_PASS = os.getenv("DB_PASS", "changeme")
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "booru-db")
+DB_USER = os.getenv("DB_USER", None)
+DB_PASS = os.getenv("DB_PASS", None)
+DB_HOST = os.getenv("DB_HOST", None)
+DB_PORT = os.getenv("DB_PORT", None)
+DB_NAME = os.getenv("DB_NAME", None)
 
 SZURUBOORU_BASE_URL = os.getenv("SZURUBOORU_BASE_URL", None)
 SZURUBOORU_USER_ID = os.getenv("SZURUBOORU_USER_ID", None)
@@ -32,6 +32,11 @@ _REQUIRED = {
     "SZURUBOORU_BASE_URL": SZURUBOORU_BASE_URL,
     "SZURUBOORU_USER_ID": SZURUBOORU_USER_ID,
     "SZURUBOORU_API_TOKEN": SZURUBOORU_API_TOKEN,
+    "DB_USER": DB_USER,
+    "DB_PASS": DB_PASS,
+    "DB_HOST": DB_HOST,
+    "DB_PORT": DB_PORT,
+    "DB_NAME": DB_NAME,
 }
 
 def validate():
