@@ -3,8 +3,10 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     UniqueConstraint,
+    delete,
     select,
 )
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -121,23 +123,40 @@ async def md5_exists(md5):
     return bool(result is not None)
 
 
-async def store_post(
-    source, source_post_id, szurubooru_post_id, md5, image_url, status
-):
+async def claim_post(source, source_post_id, md5, image_url, status):
     async with AsyncSession(engine, expire_on_commit=False) as session:
-        new_post = Posts(
-            source=source,
-            source_post_id=source_post_id,
-            szurubooru_post_id=szurubooru_post_id,
-            md5=md5,
-            image_url=image_url,
-            status=status,
+        claim = (
+            pg_insert(Posts)
+            .values(
+                source=source,
+                source_post_id=source_post_id,
+                szurubooru_post_id=None,
+                md5=md5,
+                image_url=image_url,
+                status=status,
+            )
+            .on_conflict_do_nothing(index_elements=["source", "source_post_id"])
+            .returning(Posts.id)
         )
-
-        session.add(new_post)
+        result = await session.execute(claim)
         await session.commit()
-        await session.flush()
-        return new_post.id
+        return result.scalar_one_or_none()
+
+
+async def release_claims(post_ids):
+    if not post_ids:
+        return
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        await session.execute(
+            delete(Posts).where(Posts.id.in_(post_ids), Posts.status == "queued")
+        )
+        await session.commit()
+
+
+async def release_stale_claims():
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        await session.execute(delete(Posts).where(Posts.status == "queued"))
+        await session.commit()
 
 
 async def tag_exists(tag_name):
@@ -150,8 +169,12 @@ async def tag_exists(tag_name):
 
 async def store_tag(tag_name, tag_type):
     async with AsyncSession(engine, expire_on_commit=False) as session:
-        save_tag = Tags(tag=tag_name, type=tag_type)
-        session.add(save_tag)
+        save_tag = (
+            pg_insert(Tags)
+            .values(tag=tag_name, type=tag_type)
+            .on_conflict_do_nothing(index_elements=["tag"])
+        )
+        await session.execute(save_tag)
         await session.commit()
 
 

@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
     config.validate()
     await http.create_clients()
     await db.init_db()
+    await db.release_stale_claims()
 
     yield
 
@@ -47,12 +48,28 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 
-def log_and_queue(queue, level, message, counters):
-    getattr(logger, level)(message)
+def emit(queue, counters, level, message):
     queue.put_nowait({**counters, "log": message, "level": level})
 
 
-async def process_post(booru_source, post, semaphore, lock, queue, counters):
+def bump(queue, counters, field, level, message):
+    counters[field] += 1
+    emit(queue, counters, level, message)
+
+
+def log_and_queue(queue, level, message, counters):
+    getattr(logger, level)(message)
+    emit(queue, counters, level, message)
+
+
+def response_json(r):
+    try:
+        return r.json()
+    except ValueError:
+        return {}
+
+
+async def process_post(booru_source, db_entry, post, semaphore, queue, counters):
     async with semaphore:
         source_id = post["id"]
         try:
@@ -62,79 +79,49 @@ async def process_post(booru_source, post, semaphore, lock, queue, counters):
                 post["rating"], "sketchy"
             )
             source = post["source"]
-            md5 = post["md5"]
             image_width = post["width"]
             image_height = post["height"]
-            notes = post.get("notes") # Uses .get() because most posts won't have notes added and will raise a KeyError
+            notes = post.get(
+                "notes"
+            )  # Uses .get() because most posts won't have notes added and will raise a KeyError
 
-            db_entry = await db.store_post(
-                booru_source, source_id, None, md5, contentUrl, "queued"
-            )
-            logger.debug(f"{db_entry} db entry added")
             logger.debug("Attempting to upload post to szurubooru")
-            r = await szurubooru.upload_post(contentUrl, tags, safety, image_width, image_height, source, notes)
+            r = await szurubooru.upload_post(
+                contentUrl, tags, safety, image_width, image_height, source, notes
+            )
+            body = response_json(r)
 
             if r.status_code == 200:
-                async with lock:
-                    counters["processed"] += 1
-                    queue.put_nowait(
-                        {
-                            "processed": counters["processed"],
-                            "skipped": counters["skipped"],
-                            "failed": counters["failed"],
-                            "total": counters["total"],
-                            "log": "post processed",
-                            "level": "debug",
-                        }
-                    )
-                    logger.info("Szurubooru post creation succeeded.")
-                await db.add_szurubooru_post_id(db_entry, r.json()["id"])
+                bump(queue, counters, "processed", "debug", "post processed")
+                logger.info("Szurubooru post creation succeeded.")
+                await db.add_szurubooru_post_id(db_entry, body["id"])
                 await db.update_post_status(booru_source, source_id, "processed")
-            elif r.status_code == 400 and r.json().get("name") == "PostAlreadyUploadedError":
-                async with lock:
-                    counters["skipped"] += 1
-                    queue.put_nowait(
-                        {
-                            "processed": counters["processed"],
-                            "skipped": counters["skipped"],
-                            "failed": counters["failed"],
-                            "total": counters["total"],
-                            "log": "Skipped",
-                            "level": "debug",
-                        }
-                    )
+            elif (
+                r.status_code == 400 and body.get("name") == "PostAlreadyUploadedError"
+            ):
+                bump(queue, counters, "skipped", "debug", "Post already uploaded - Skipping")
                 await db.update_post_status(booru_source, source_id, "skipped")
             else:
-                error_code = r.json().get("name", "Unknown")
-                async with lock:
-                    counters["failed"] += 1
-                    queue.put_nowait(
-                        {
-                            "processed": counters["processed"],
-                            "skipped": counters["skipped"],
-                            "failed": counters["failed"],
-                            "total": counters["total"],
-                            "log": f"Post {source_id} failed with status code: {r.status_code} {error_code}",
-                            "level": "warning",
-                        }
-                    )
+                error_code = body.get("name", "Unknown")
+                bump(
+                    queue,
+                    counters,
+                    "failed",
+                    "warning",
+                    f"Post {source_id} failed with status code: {r.status_code} {error_code}",
+                )
                 logger.debug(
                     f"Szurubooru creation failed with status code: {r.status_code}"
                 )
                 await db.update_post_status(booru_source, source_id, "failed")
         except Exception as e:
-            async with lock:
-                counters["failed"] += 1
-                queue.put_nowait(
-                    {
-                        "processed": counters["processed"],
-                        "skipped": counters["skipped"],
-                        "failed": counters["failed"],
-                        "total": counters["total"],
-                        "log": f"Unhandled error for post {source_id}: {e}",
-                        "level": "error",
-                    }
-                )
+            bump(
+                queue,
+                counters,
+                "failed",
+                "error",
+                f"Unhandled error for post {source_id}: {e}",
+            )
             logger.exception(f"Unhandled exception processing post {source_id}")
 
 
@@ -143,6 +130,7 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
     source = SOURCES[booru_source]
     counters = {"processed": 0, "skipped": 0, "failed": 0, "total": 0}
     run_status = "done"
+    new_posts = []
     if tags:
         tags = " ".join(tags.split())
     if blacklist_tags:
@@ -161,12 +149,11 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
         )
         scrape_tags = set()
         unknown_tags = set()
-        new_posts = []
 
         for result in scrape_results:
             counters["total"] += 1
             log_and_queue(queue, "debug", "Total increased", counters)
-            if await db.post_exists(source="gelbooru", source_post_id=result["id"]):
+            if await db.post_exists(source=booru_source, source_post_id=result["id"]):
                 counters["skipped"] += 1
                 log_and_queue(
                     queue,
@@ -182,19 +169,34 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
                     f"MD5: {result['md5']} already exists in db. Adding source entry and skipping.",
                     counters,
                 )
-                await db.store_post(
-                    source="gelbooru",
+                await db.claim_post(
+                    source=booru_source,
                     source_post_id=result["id"],
-                    szurubooru_post_id=None,
                     md5=result["md5"],
                     image_url=result["file_url"],
                     status="skipped",
                 )
             else:
-                scrape_tags.update(result["tags"].split(" "))
-                logger.debug(result["tags"].split(" "))
-                new_posts.append(result)
-                logger.debug(f"Appended: {result}")
+                db_entry = await db.claim_post(
+                    source=booru_source,
+                    source_post_id=result["id"],
+                    md5=result["md5"],
+                    image_url=result["file_url"],
+                    status="queued",
+                )
+                if db_entry is None:
+                    counters["skipped"] += 1
+                    log_and_queue(
+                        queue,
+                        "debug",
+                        f"Gelbooru: {result['id']} is already claimed by another run. Skipping",
+                        counters,
+                    )
+                else:
+                    new_posts.append((db_entry, result))
+                    scrape_tags.update(result["tags"].split(" "))
+                    logger.debug(result["tags"].split(" "))
+                    logger.debug(f"Appended: {result}")
 
         for tag in scrape_tags:
             if not await db.tag_exists(tag):
@@ -215,11 +217,10 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
                 )
 
         semaphore = asyncio.Semaphore(int(config.CONCURRENT_UPLOADS))
-        lock = asyncio.Lock()
         await asyncio.gather(
             *[
-                process_post(booru_source, post, semaphore, lock, queue, counters)
-                for post in new_posts
+                process_post(booru_source, db_entry, post, semaphore, queue, counters)
+                for db_entry, post in new_posts
             ],
             return_exceptions=True,
         )
@@ -233,6 +234,7 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
         run_status = "error"
         logger.exception(f"Scrape failed: {e}")  # noqa: TRY401
     finally:
+        await db.release_claims([db_entry for db_entry, _ in new_posts])
         await db.update_run(
             run,
             counters["total"],
@@ -248,6 +250,7 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
+
 
 @app.get("/api/sources")
 async def get_sources():
