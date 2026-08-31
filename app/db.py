@@ -217,7 +217,6 @@ async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, sta
 
         session.add(run)
         await session.commit()
-        await session.flush()
         return run.id
 
 
