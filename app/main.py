@@ -105,7 +105,7 @@ async def process_post(booru_source, post, semaphore, lock, queue, counters):
                     )
                 await db.update_post_status(booru_source, source_id, "skipped")
             else:
-                error_code = r.json()["name", "Unknown"]
+                error_code = r.json().get("name", "Unknown")
                 async with lock:
                     counters["failed"] += 1
                     queue.put_nowait(
