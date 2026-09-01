@@ -69,7 +69,9 @@ def response_json(r):
         return {}
 
 
-async def process_post(booru_source, db_entry, post, semaphore, queue, counters):
+async def process_post(
+    booru_source, db_entry, post, semaphore, queue, counters, failures
+):
     async with semaphore:
         source_id = post["id"]
         try:
@@ -99,16 +101,30 @@ async def process_post(booru_source, db_entry, post, semaphore, queue, counters)
             elif (
                 r.status_code == 400 and body.get("name") == "PostAlreadyUploadedError"
             ):
-                bump(queue, counters, "skipped", "debug", "Post already uploaded - Skipping")
+                bump(
+                    queue,
+                    counters,
+                    "skipped",
+                    "debug",
+                    "Post already uploaded - Skipping",
+                )
                 await db.update_post_status(booru_source, source_id, "skipped")
             else:
                 error_code = body.get("name", "Unknown")
+                failures.append(
+                    {
+                        "id": source_id,
+                        "error": error_code,
+                        "url": contentUrl,
+                        "tags": tags,
+                    }
+                )
                 bump(
                     queue,
                     counters,
                     "failed",
                     "warning",
-                    f"Post {source_id} failed with status code: {r.status_code} {error_code}",
+                    f"Post {source_id} failed with status code: {r.status_code} {error_code} - {contentUrl}",
                 )
                 logger.debug(
                     f"Szurubooru creation failed with status code: {r.status_code}"
@@ -131,6 +147,7 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
     counters = {"processed": 0, "skipped": 0, "failed": 0, "total": 0}
     run_status = "done"
     new_posts = []
+    failures = []
     if tags:
         tags = " ".join(tags.split())
     if blacklist_tags:
@@ -219,7 +236,9 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
         semaphore = asyncio.Semaphore(int(config.CONCURRENT_UPLOADS))
         await asyncio.gather(
             *[
-                process_post(booru_source, db_entry, post, semaphore, queue, counters)
+                process_post(
+                    booru_source, db_entry, post, semaphore, queue, counters, failures
+                )
                 for db_entry, post in new_posts
             ],
             return_exceptions=True,
@@ -235,6 +254,24 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
         logger.exception(f"Scrape failed: {e}")  # noqa: TRY401
     finally:
         await db.release_claims([db_entry for db_entry, _ in new_posts])
+        if failures:
+            log_and_queue(
+                queue,
+                "warning",
+                f"{len(failures)} post(s) could not be uploaded and need handling by hand:",
+                counters,
+            )
+            for failure in failures:
+                log_and_queue(
+                    queue,
+                    "warning",
+                    f"  {failure['id']} - {failure['error']}",
+                    counters,
+                )
+                log_and_queue(queue, "warning", f"    url:  {failure['url']}", counters)
+                log_and_queue(
+                    queue, "warning", f"    tags: {failure['tags']}", counters
+                )
         await db.update_run(
             run,
             counters["total"],

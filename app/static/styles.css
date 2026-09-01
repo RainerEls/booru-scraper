@@ -229,7 +229,7 @@ select { cursor: pointer; appearance: none;
   content: 'Waiting for output…';
   color: var(--text-3);
 }
-.log-line { color: var(--text-2); }
+.log-line { color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .log-line--error   { color: var(--red); }
 .log-line--warning { color: var(--amber); }
 .log-line--info    { color: var(--text-2); }
