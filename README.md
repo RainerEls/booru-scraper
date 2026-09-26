@@ -60,6 +60,11 @@ PRs for other sources (Danbooru, Rule34, etc.) are welcome — `Source` in `cons
 _No releases yet._
 <!-- CHANGES:END -->
 
+## Contributing
+
+<!-- CONTRIBUTING:START -->
+<!-- CONTRIBUTING:END -->
+
 ## License
 
 AGPL-3.0 — see [LICENSE](LICENSE).
