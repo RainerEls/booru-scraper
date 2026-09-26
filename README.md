@@ -1,7 +1,7 @@
 # booru-scraper
 
 <!-- BADGES:START -->
-[![Latest release](https://img.shields.io/gitea/v/release/SleepyShoggoth/booru-scraper?gitea_url=https://gitea.rkahome.work&label=release)](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/releases/latest) [Open tracker issues](https://gitea.rkahome.work/SleepyShoggoth/homelab-tracker/issues?q=booru-scraper&type=all&state=open) [Pending Renovate PRs](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/pulls?type=all&state=open&q=renovate)
+[![Latest release](https://img.shields.io/gitea/v/release/SleepyShoggoth/booru-scraper?gitea_url=https://gitea.example.org&label=release)](https://gitea.example.org/SleepyShoggoth/booru-scraper/releases/latest) [Open tracker issues](https://gitea.example.org/SleepyShoggoth/homelab-tracker/issues?q=booru-scraper&type=all&state=open) [Pending Renovate PRs](https://gitea.example.org/SleepyShoggoth/booru-scraper/pulls?type=all&state=open&q=renovate)
 <!-- BADGES:END -->
 
 A small web app for pulling posts from booru-style image boards and uploading them into a self-hosted [szurubooru](https://github.com/rr-/szurubooru) instance. Kick off a scrape from a browser, watch progress live, and let it handle tag syncing and dedup against what's already in your booru.
@@ -57,12 +57,13 @@ PRs for other sources (Danbooru, Rule34, etc.) are welcome — `Source` in `cons
 ## Recent changes
 
 <!-- CHANGES:START -->
-_No releases yet._
+_No releases yet._ [Releases](https://gitea.example.org/SleepyShoggoth/booru-scraper/releases)
 <!-- CHANGES:END -->
 
 ## Contributing
 
 <!-- CONTRIBUTING:START -->
+Feature branch → pull request → conventional commits → CI releases and deploys. See [CONTRIBUTING.md](https://gitea.example.org/SleepyShoggoth/actions/src/branch/main/CONTRIBUTING.md) in `actions`.
 <!-- CONTRIBUTING:END -->
 
 ## License
