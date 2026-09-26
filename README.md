@@ -57,8 +57,14 @@ PRs for other sources (Danbooru, Rule34, etc.) are welcome — `Source` in `cons
 ## Recent changes
 
 <!-- CHANGES:START -->
-_No releases yet._
+_No releases yet._ [Releases](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/releases)
 <!-- CHANGES:END -->
+
+## Contributing
+
+<!-- CONTRIBUTING:START -->
+Feature branch → pull request → conventional commits → CI releases and deploys. See [CONTRIBUTING.md](https://gitea.rkahome.work/SleepyShoggoth/actions/src/branch/main/CONTRIBUTING.md) in `actions`.
+<!-- CONTRIBUTING:END -->
 
 ## License
 
