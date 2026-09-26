@@ -1,5 +1,9 @@
 # booru-scraper
 
+<!-- BADGES:START -->
+[![Latest release](https://img.shields.io/gitea/v/release/SleepyShoggoth/booru-scraper?gitea_url=https://gitea.rkahome.work&label=release)](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/releases/latest) [Open tracker issues](https://gitea.rkahome.work/SleepyShoggoth/homelab-tracker/issues?q=booru-scraper&type=all&state=open) [Pending Renovate PRs](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/pulls?type=all&state=open&q=renovate)
+<!-- BADGES:END -->
+
 A small web app for pulling posts from booru-style image boards and uploading them into a self-hosted [szurubooru](https://github.com/rr-/szurubooru) instance. Kick off a scrape from a browser, watch progress live, and let it handle tag syncing and dedup against what's already in your booru.
 
 ## Features
@@ -49,6 +53,12 @@ You'll still need a Postgres instance reachable with the credentials in `.env`.
 Sources implement `search_posts()` and `grab_tags()` from `app/sources/base.py`. Register a new one in the `SOURCES` dict in `app/main.py` and it'll show up in the UI's source dropdown automatically. You'll also want to add a tag-type map and a rating-conversion map for it in `app/constants.py` — see `GELBOORU_TAG_TYPES`/`GELBOORU_RATINGS_CONVERSIONS` for the pattern.
 
 PRs for other sources (Danbooru, Rule34, etc.) are welcome — `Source` in `constants.py` already has a `DANBOORU` entry stubbed in, so that one's a good starting point. Keep rate limiting in mind (see `YANDERE_RATE_LIMIT`/`GELBOORU_RATE_LIMIT` in `app/config.py` for how existing sources configure theirs) and make sure ratings/tag types get mapped onto the `safe`/`sketchy`/`unsafe` and general/artist/copyright/character/metadata conventions the rest of the app expects.
+
+## Recent changes
+
+<!-- CHANGES:START -->
+_No releases yet._
+<!-- CHANGES:END -->
 
 ## License
 
