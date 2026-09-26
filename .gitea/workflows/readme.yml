@@ -1,0 +1,11 @@
+name: README
+
+on:
+  pull_request:
+
+jobs:
+  readme:
+    uses: SleepyShoggoth/actions/.gitea/workflows/readme.yml@main
+    secrets: inherit
+    with:
+      variant: public
