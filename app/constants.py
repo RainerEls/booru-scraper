@@ -28,10 +28,10 @@ GELBOORU_RATINGS_CONVERSIONS = {
 
 YANDERE_RATINGS_CONVERSIONS = {"s": "safe", "q": "sketchy", "e": "unsafe"}
 
-FRONTEND_TO_GELBOORU_RATINGS = {
-    "safe": "general",
-    "sketchy": "questionable",
-    "unsafe": "explicit",
+FRONTEND_TO_GELBOORU_RATING_TERMS = {
+    "safe": ["rating:general"],
+    "sketchy": ["-rating:general", "-rating:explicit"],
+    "unsafe": ["rating:explicit"],
 }
 
 

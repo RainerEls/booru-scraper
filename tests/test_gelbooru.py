@@ -122,6 +122,23 @@ def test_score_sort_reaches_every_post_once(monkeypatch, sort_term, ordering):
     assert [p["score"] for p in results] == sorted(scores, key=lambda score: ordering * score)
 
 
+@pytest.mark.parametrize(
+    "rating, terms",
+    [
+        ("safe", "rating:general"),
+        ("sketchy", "-rating:general -rating:explicit"),
+        ("unsafe", "rating:explicit"),
+    ],
+)
+def test_ratings_map_onto_gelbooru_terms(monkeypatch, rating, terms):
+    requests = []
+    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_posts(1, requests)))
+
+    asyncio.run(collect(GelbooruSource().search_posts(tags="cat", rating=rating), 1))
+
+    assert requests == [f"cat {terms}"]
+
+
 def test_note_markup_becomes_markdown():
     assert html_note_to_markdown("<b>bold</b><br>a_b<span>c</span>") == "**bold**\na\\_bc"
 

@@ -87,7 +87,7 @@ class GelbooruSource(BooruSource):
     async def search_posts(self, tags="", blacklist_tags="", rating=None):
         terms = ["-" + tag for tag in blacklist_tags.split()] + tags.split()
         if rating:
-            terms.append(f"rating:{constants.FRONTEND_TO_GELBOORU_RATINGS.get(rating)}")
+            terms.extend(constants.FRONTEND_TO_GELBOORU_RATING_TERMS[rating])
         logger.debug(terms)
 
         sort_term = next((term for term in terms if term.startswith("sort:")), None)
