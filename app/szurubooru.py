@@ -9,6 +9,17 @@ BASE_URL = config.SZURUBOORU_BASE_URL
 UPLOAD_TIMEOUT = 300.0
 
 
+async def ensure_tag_categories(names):
+    r = await http.szurubooru_session.get(f"{BASE_URL}/tag-categories")
+    r.raise_for_status()
+    existing = r.json()["results"]
+    missing = set(names) - {category["name"] for category in existing}
+    for order, name in enumerate(sorted(missing), start=len(existing) + 1):
+        payload = {"name": name, "color": "default", "order": order}
+        r = await http.szurubooru_session.post(f"{BASE_URL}/tag-categories", json=payload)
+        r.raise_for_status()
+
+
 async def get_tag(tag_name):
     r = await http.szurubooru_session.get(f"{BASE_URL}/tag/{quote(tag_name, safe='')}")
     return r
