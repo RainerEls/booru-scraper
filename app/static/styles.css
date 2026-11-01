@@ -95,7 +95,7 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
   border-radius: var(--radius);
   padding: 20px;
 }
-.card--flush { padding: 0; overflow: hidden; }
+.card--flush { padding: 0; overflow-x: auto; }
 .card + .card { margin-top: 12px; }
 
 /* ── form ────────────────────────────────────────────────────── */
@@ -314,3 +314,9 @@ select { cursor: pointer; appearance: none;
   text-align: center; padding: 40px 20px;
   color: var(--text-2); font-size: 13px;
 }
+/* ── integrity checks ────────────────────────────────────────── */
+.section-note { color: var(--text-3); font-size: 13px; margin-bottom: 12px; }
+.check-detail { font-size: 13px; }
+.check-issues { list-style: none; margin-top: 8px; overflow-wrap: anywhere; }
+.check-issues li { padding: 4px 0; }
+.time-cell { white-space: nowrap; }

@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Activity · Booru Scraper{% endblock %}
+
+{% block content %}
+
+<div class="section-head" style="margin-top: 28px;">
+  <h2>Integrity Checks</h2>
+  <div class="rule"></div>
+  <button type="button" class="btn btn--primary" id="check-btn" {% if check_running %}disabled{% endif %}>
+    {% if check_running %}Checking…{% else %}Run Check{% endif %}
+  </button>
+</div>
+
+<p class="section-note">Compares every post this app uploaded with what's on szurubooru. Nothing is changed.</p>
+
+{% if checks %}
+<div class="card card--flush">
+  <table class="history-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th class="num">Intact</th>
+        <th class="num">Missing</th>
+        <th class="num">Damaged</th>
+        <th class="num">Unverified</th>
+        <th class="num">Deleted</th>
+        <th class="num">Merged</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for check in checks %}
+      {% set counts = check.report.counts if check.report else {} %}
+      <tr>
+        <td class="mono time-cell">{{ check.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="num green">{{ counts.intact or 0 }}</td>
+        <td class="num red">{{ counts.missing or 0 }}</td>
+        <td class="num red">{{ counts.damaged or 0 }}</td>
+        <td class="num amber">{{ counts.unverified or 0 }}</td>
+        <td class="num">{{ counts.deleted or 0 }}</td>
+        <td class="num">{{ counts.merged or 0 }}</td>
+        <td><span class="status-badge status-badge--{{ check.status }}">{{ check.status }}</span></td>
+      </tr>
+      {% if check.error %}
+      <tr><td colspan="8" class="check-detail red">Nothing was reported, as the check couldn't finish: {{ check.error }}</td></tr>
+      {% endif %}
+      {% if check.report and check.report.issues %}
+      <tr>
+        <td colspan="8" class="check-detail">
+          <details>
+            <summary>{{ check.report.issues | length }} post(s) to review</summary>
+            <ul class="check-issues">
+              {% for issue in check.report.issues | sort(attribute="kind") %}
+              <li>
+                <span class="status-badge status-badge--{{ 'error' if issue.kind in ('missing', 'damaged') else 'skipped' }}">{{ issue.kind }}</span>
+                {{ issue.source }} {{ issue.source_post_id }}, booru post {{ issue.booru_post_id }}: {{ issue.detail }}
+                <a href="{{ issue.image_url }}" rel="noreferrer">source file</a>
+              </li>
+              {% endfor %}
+            </ul>
+          </details>
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card empty-state">
+  <p>No checks yet.</p>
+</div>
+{% endif %}
+
+<div class="section-head" style="margin-top: 28px;">
+  <h2>Scrape Runs</h2>
+  <div class="rule"></div>
+</div>
+
+{% if runs %}
+<div class="card card--flush">
+  <table class="history-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Source</th>
+        <th>Tags</th>
+        <th>Blacklisted</th>
+        <th>Limit</th>
+        <th class="num">Total</th>
+        <th class="num">Uploaded</th>
+        <th class="num">Skipped</th>
+        <th class="num">Failed</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td class="mono time-cell">{{ run.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ run.source }}</td>
+        <td class="tags-cell" title="{{ run.tags or '' }}">{{ run.tags or '—' }}</td>
+        <td class="blacklist-cell" title="{{ run.blacklist_tags or '' }}">{{ run.blacklist_tags or '—' }}</td>
+        <td class="num">{{ run.post_limit }}</td>
+        <td class="num">{{ run.total }}</td>
+        <td class="num green">{{ run.processed }}</td>
+        <td class="num amber">{{ run.skipped }}</td>
+        <td class="num red">{{ run.failed }}</td>
+        <td>
+          <span class="status-badge status-badge--{{ run.status }}">{{ run.status }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card empty-state">
+  <p>No scrape runs yet. Start one from the <a href="/">Scrape</a> page.</p>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('check-btn').addEventListener('click', function() {
+    this.disabled = true;
+    fetch('/api/integrity-checks', { method: 'POST' }).then(() => location.reload());
+  });
+  {% if check_running %}
+  setTimeout(() => location.reload(), 3000);
+  {% endif %}
+</script>
+{% endblock %}
