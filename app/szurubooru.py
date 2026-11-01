@@ -78,6 +78,14 @@ async def sync_tag(tag_name, tag_category):
         r.raise_for_status()
 
 
+async def replace_content(post_id, contentUrl):
+    current = await http.szurubooru_session.get(f"{BASE_URL}/post/{post_id}", params={"fields": "version"})
+    current.raise_for_status()
+    payload = {"version": current.json()["version"], "contentUrl": contentUrl}
+    r = await http.szurubooru_session.put(f"{BASE_URL}/post/{post_id}", json=payload, timeout=UPLOAD_TIMEOUT)
+    r.raise_for_status()
+
+
 async def upload_post(
     contentUrl, tags, safety, image_width, image_height, source=None, notes=None
 ):

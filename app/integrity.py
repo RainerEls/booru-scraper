@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from app import config, db, http
+from app import config, db, http, szurubooru
 from app.sources.base import api_get
 
 logger = logging.getLogger(__name__)
@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 BASE_URL = config.SZURUBOORU_BASE_URL
 PAGE_SIZE = 100
 CONCURRENT_FILE_CHECKS = 5
+REPULLABLE = ("missing", "damaged")
+REPULL_DELAY = 1.1
 
 
 async def all_results(path, **params):
@@ -64,6 +66,7 @@ async def check_post(post, booru_posts, deleted, merged, semaphore):
     return {
         "kind": kind,
         "detail": detail,
+        "post_id": post.id,
         "source": post.source,
         "source_post_id": post.source_post_id,
         "booru_post_id": post.szurubooru_post_id,
@@ -90,6 +93,51 @@ async def run_check(check_id):
         report = await build_report(await db.get_uploaded_posts())
     except Exception as e:
         logger.exception("Integrity check failed")
-        await db.finish_check(check_id, "error", error=repr(e))
+        await db.finish_check(check_id, "error", error=f"Nothing was reported, as the check couldn't finish: {e!r}")
     else:
         await db.finish_check(check_id, "done", report=report)
+
+
+async def repull_post(issue, kind, source):
+    found = [post async for post in source.search_posts(tags=f"id:{issue['source_post_id']}")]
+    if not found:
+        return "The source no longer has this post"
+    post = found[0]
+    if kind == "damaged":
+        await szurubooru.replace_content(issue["booru_post_id"], post["file_url"])
+        return "File replaced"
+    r = await szurubooru.upload_post(
+        post["file_url"],
+        post["tags"],
+        source.ratings.get(post["rating"], "sketchy"),
+        post["width"],
+        post["height"],
+        post.get("source"),
+        await source.grab_notes(post),
+    )
+    r.raise_for_status()
+    await db.add_szurubooru_post_id(issue["post_id"], r.json()["id"])
+    return "Uploaded again"
+
+
+async def run_repull(check_id, report, sources):
+    issues = [issue for issue in report["issues"] if issue["kind"] in REPULLABLE]
+    posts = await db.get_posts([issue["post_id"] for issue in issues])
+    try:
+        current = {i["post_id"]: i["kind"] for i in (await build_report(posts))["issues"]}
+    except Exception as e:
+        logger.exception("Re-pull failed")
+        await db.finish_check(check_id, "done", report=report, error=f"Nothing was re-pulled: {e!r}")
+        return
+    for issue in issues:
+        kind = current.get(issue["post_id"], "intact")
+        if kind not in REPULLABLE:
+            issue["repull"] = f"Left alone, as it's now {kind}"
+            continue
+        try:
+            issue["repull"] = await repull_post(issue, kind, sources[issue["source"]])
+        except Exception as e:
+            logger.exception(f"Re-pull failed for post {issue['post_id']}")
+            issue["repull"] = f"Failed: {e!r}"
+        await asyncio.sleep(REPULL_DELAY)
+    await db.finish_check(check_id, "done", report=report)

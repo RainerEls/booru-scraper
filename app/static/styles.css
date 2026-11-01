@@ -320,3 +320,4 @@ select { cursor: pointer; appearance: none;
 .check-issues { list-style: none; margin-top: 8px; overflow-wrap: anywhere; }
 .check-issues li { padding: 4px 0; }
 .time-cell { white-space: nowrap; }
+.check-repull { margin-left: 6px; color: var(--text-2); font-weight: 500; }
