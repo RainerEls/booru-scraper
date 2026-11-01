@@ -32,7 +32,6 @@ SOURCES = {
     "rule34": Rule34Source(),
 }
 FEW_KNOWN_TAGS = 3000
-CHECK_BUSY = ("running", "repulling")
 
 jobs = {}
 
@@ -42,11 +41,33 @@ class Job:
         self.events = []
         self.updated = asyncio.Event()
         self.finished = False
+        self.status = "done"
+        self.counters = {"processed": 0, "skipped": 0, "failed": 0, "total": 0}
+        self.failures = []
 
     def publish(self, event):
         self.events.append(event)
         self.updated.set()
         self.updated = asyncio.Event()
+
+    def log(self, level, message):
+        getattr(logger, level)(message)
+        if level == "debug":
+            self.publish({**self.counters})
+        else:
+            self.publish({**self.counters, "log": message, "level": level})
+
+    def count(self, field, message, level="debug"):
+        self.counters[field] += 1
+        self.log(level, message)
+
+    def error(self, message):
+        self.status = "error"
+        self.log("error", message)
+
+    def finish(self):
+        self.finished = True
+        self.publish({"status": self.status})
 
 
 @asynccontextmanager
@@ -75,23 +96,6 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 
-def emit(job, counters, level, message):
-    if level == "debug":
-        job.publish({**counters})
-    else:
-        job.publish({**counters, "log": message, "level": level})
-
-
-def bump(job, counters, field, level, message):
-    counters[field] += 1
-    emit(job, counters, level, message)
-
-
-def log_and_emit(job, level, message, counters):
-    getattr(logger, level)(message)
-    emit(job, counters, level, message)
-
-
 def response_json(r):
     try:
         return r.json()
@@ -99,254 +103,136 @@ def response_json(r):
         return {}
 
 
-async def process_post(
-    booru_source, db_entry, post, semaphore, job, counters, failures
-):
+async def process_post(source, db_entry, post, semaphore, job):
     async with semaphore:
-        source_id = post["id"]
         try:
-            contentUrl = post["file_url"]
-            tags = post["tags"]
-            safety = SOURCES[booru_source].safety(post)
-            source = post["source"]
-            image_width = post["width"]
-            image_height = post["height"]
-            notes = post["notes"]
-
-            logger.debug("Attempting to upload post to szurubooru")
-            r = await szurubooru.upload_post(
-                contentUrl, tags, safety, image_width, image_height, source, notes
-            )
+            r = await szurubooru.upload_post(post, source.safety(post))
             body = response_json(r)
 
             if r.status_code == 200:
-                logger.info("Szurubooru post creation succeeded.")
-                await db.add_szurubooru_post_id(db_entry, body["id"])
-                await db.update_post_status(booru_source, source_id, "processed")
-                bump(job, counters, "processed", "debug", "post processed")
-            elif (
-                r.status_code == 400 and body.get("name") == "PostAlreadyUploadedError"
-            ):
-                await db.update_post_status(booru_source, source_id, "skipped")
-                bump(
-                    job,
-                    counters,
-                    "skipped",
-                    "debug",
-                    "Post already uploaded - Skipping",
-                )
+                await db.finish_post(db_entry, "processed", body["id"])
+                job.count("processed", f"Post {post['id']} uploaded")
+            elif r.status_code == 400 and body.get("name") == "PostAlreadyUploadedError":
+                await db.finish_post(db_entry, "skipped")
+                job.count("skipped", f"Post {post['id']} already uploaded, skipping")
             else:
                 error_code = body.get("name", "Unknown")
-                failures.append(
-                    {
-                        "id": source_id,
-                        "error": error_code,
-                        "url": contentUrl,
-                        "tags": tags,
-                    }
+                job.failures.append(
+                    {"id": post["id"], "error": error_code, "url": post["file_url"], "tags": post["tags"]}
                 )
-                bump(
-                    job,
-                    counters,
+                job.count(
                     "failed",
+                    f"Post {post['id']} failed with status code: {r.status_code} {error_code} - {post['file_url']}",
                     "warning",
-                    f"Post {source_id} failed with status code: {r.status_code} {error_code} - {contentUrl}",
-                )
-                logger.debug(
-                    f"Szurubooru creation failed with status code: {r.status_code}"
                 )
         except Exception as e:
-            bump(
-                job,
-                counters,
-                "failed",
-                "error",
-                f"Unhandled error for post {source_id}: {e!r}",
-            )
-            logger.exception(f"Unhandled exception processing post {source_id}")
+            logger.exception(f"Unhandled exception processing post {post['id']}")
+            job.count("failed", f"Unhandled error for post {post['id']}: {e!r}", "error")
 
 
-async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rating):
+async def claim_if_new(job, source_name, post):
+    claim = {"source": source_name, "source_post_id": post["id"], "md5": post["md5"], "image_url": post["file_url"]}
+    if await db.post_exists(source_name, post["id"]):
+        job.count("skipped", f"{source_name}: {post['id']} already exists in DB, skipping")
+        return None
+    if await db.md5_exists(post["md5"]):
+        await db.claim_post(**claim, status="skipped")
+        job.count("skipped", f"MD5 {post['md5']} already exists in DB, adding source entry and skipping")
+        return None
+    db_entry = await db.claim_post(**claim, status="queued")
+    if db_entry is None:
+        job.count("skipped", f"{source_name}: {post['id']} is already claimed by another run, skipping")
+    return db_entry
 
-    source = SOURCES[booru_source]
-    counters = {"processed": 0, "skipped": 0, "failed": 0, "total": 0}
-    run_status = "done"
+
+async def find_new_posts(job, source_name, search, limit, new_posts):
+    source = SOURCES[source_name]
+    try:
+        async for post in source.search_posts(**search):
+            job.count("total", f"Found post {post['id']}")
+            db_entry = await claim_if_new(job, source_name, post)
+            if db_entry is None:
+                continue
+            post["notes"] = await source.grab_notes(post)
+            new_posts.append((db_entry, post))
+            if len(new_posts) >= limit:
+                return
+    except Exception as e:
+        logger.exception("Search failed")
+        job.error(f"Search failed, continuing with the {len(new_posts)} new post(s) found: {e!r}")
+
+
+async def sync_unknown_tags(job, source, new_posts):
+    post_tags = {tag for _, post in new_posts for tag in post["tags"].split()}
+    unknown_tags = {tag for tag in post_tags if not await db.tag_exists(tag)}
+    job.log("info", f"Found {len(new_posts)} new post(s) with {len(unknown_tags)} unknown tag(s)")
+    if not unknown_tags:
+        return
+
+    new_tags = await source.grab_tags(unknown_tags)
+    for synced, tag in enumerate(new_tags):
+        if synced % 100 == 0:
+            job.log("info", f"Syncing tags: {synced}/{len(new_tags)}")
+        try:
+            await szurubooru.sync_tag(tag["name"], tag["category"])
+        except httpx.HTTPError as e:
+            job.log("warning", f"Tag {tag['name']} failed to sync: {e!r}")
+        else:
+            await db.store_tag(tag["name"])
+
+
+def report_failures(job):
+    if not job.failures:
+        return
+    job.log("warning", f"{len(job.failures)} post(s) could not be uploaded and will be retried next run:")
+    for failure in job.failures:
+        job.log("warning", f"  {failure['id']} - {failure['error']}")
+        job.log("warning", f"    url:  {failure['url']}")
+        job.log("warning", f"    tags: {failure['tags']}")
+
+
+async def run_scrape(run_id, job, limit, source_name, tags, blacklist_tags, rating):
+    source = SOURCES[source_name]
     new_posts = []
-    failures = []
-    tags = " ".join((tags or "").split())
-    blacklist_tags = " ".join((blacklist_tags or "").split())
-
-    logger.info(
-        f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist Tags: [{blacklist_tags}]"
-    )
+    search = {"tags": tags or "", "blacklist_tags": blacklist_tags or "", "rating": rating}
     run = None
+    logger.info(f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist Tags: [{blacklist_tags}]")
 
     try:
-        run = await db.create_run(
-            run_id, booru_source, tags, blacklist_tags, rating, limit, "running"
-        )
-        run_log.set(lambda level, message: log_and_emit(job, level, message, counters))
+        run = await db.create_run(run_id, source_name, tags, blacklist_tags, rating, limit, "running")
+        run_log.set(job.log)
         if source.slow_tag_lookup and await db.count_tags() < FEW_KNOWN_TAGS:
-            log_and_emit(
-                job,
+            job.log(
                 "warning",
-                f"{booru_source} is rate limited and looks up many tags one at a time, "
+                f"{source_name} is rate limited and looks up many tags one at a time, "
                 "so runs on a fresh instance can be slow until more tags are known.",
-                counters,
             )
         try:
             await szurubooru.ensure_tag_categories(source.tag_categories.values())
         except httpx.HTTPError as e:
-            log_and_emit(job, "warning", f"Could not set up tag categories: {e!r}", counters)
-        log_and_emit(job, "info", f"Searching {booru_source}", counters)
-        scrape_tags = set()
-        unknown_tags = set()
+            job.log("warning", f"Could not set up tag categories: {e!r}")
 
-        try:
-            async for result in source.search_posts(
-                tags=tags, blacklist_tags=blacklist_tags, rating=rating
-            ):
-                counters["total"] += 1
-                log_and_emit(job, "debug", "Total increased", counters)
-                if await db.post_exists(source=booru_source, source_post_id=result["id"]):
-                    counters["skipped"] += 1
-                    log_and_emit(
-                        job,
-                        "debug",
-                        f"{booru_source}: {result['id']} already exists in DB. Skipping",
-                        counters,
-                    )
-                elif await db.md5_exists(md5=result["md5"]):
-                    counters["skipped"] += 1
-                    log_and_emit(
-                        job,
-                        "debug",
-                        f"MD5: {result['md5']} already exists in db. Adding source entry and skipping.",
-                        counters,
-                    )
-                    await db.claim_post(
-                        source=booru_source,
-                        source_post_id=result["id"],
-                        md5=result["md5"],
-                        image_url=result["file_url"],
-                        status="skipped",
-                    )
-                else:
-                    db_entry = await db.claim_post(
-                        source=booru_source,
-                        source_post_id=result["id"],
-                        md5=result["md5"],
-                        image_url=result["file_url"],
-                        status="queued",
-                    )
-                    if db_entry is None:
-                        counters["skipped"] += 1
-                        log_and_emit(
-                            job,
-                            "debug",
-                            f"{booru_source}: {result['id']} is already claimed by another run. Skipping",
-                            counters,
-                        )
-                    else:
-                        result["notes"] = await source.grab_notes(result)
-                        new_posts.append((db_entry, result))
-                        scrape_tags.update(result["tags"].split())
-                        logger.debug(f"Appended: {result}")
-                        if len(new_posts) >= limit:
-                            break
-        except Exception as e:
-            run_status = "error"
-            logger.exception("Search failed")
-            emit(
-                job,
-                counters,
-                "error",
-                f"Search failed, continuing with the {len(new_posts)} new post(s) found: {e!r}",
-            )
+        job.log("info", f"Searching {source_name}")
+        await find_new_posts(job, source_name, search, limit, new_posts)
+        await sync_unknown_tags(job, source, new_posts)
 
-        for tag in scrape_tags:
-            if not await db.tag_exists(tag):
-                unknown_tags.add(tag)
-        log_and_emit(
-            job,
-            "info",
-            f"Found {len(new_posts)} new post(s) with {len(unknown_tags)} unknown tag(s)",
-            counters,
-        )
-
-        if unknown_tags:
-            logger.info("Grabbing unknown tags")
-            new_tags = await source.grab_tags(unknown_tags)
-            for synced, tag in enumerate(new_tags):
-                logger.debug(f"Tag data: {tag}")
-                if synced % 100 == 0:
-                    log_and_emit(
-                        job, "info", f"Syncing tags: {synced}/{len(new_tags)}", counters
-                    )
-                try:
-                    await szurubooru.sync_tag(
-                        tag_name=tag["name"],
-                        tag_category=tag["category"],
-                    )
-                except httpx.HTTPError as e:
-                    log_and_emit(
-                        job, "warning", f"Tag {tag['name']} failed to sync: {e!r}", counters
-                    )
-                else:
-                    await db.store_tag(tag["name"])
-
-        log_and_emit(job, "info", f"Uploading {len(new_posts)} post(s)", counters)
+        job.log("info", f"Uploading {len(new_posts)} post(s)")
         semaphore = asyncio.Semaphore(config.CONCURRENT_UPLOADS)
-        await asyncio.gather(
-            *[
-                process_post(
-                    booru_source, db_entry, post, semaphore, job, counters, failures
-                )
-                for db_entry, post in new_posts
-            ],
-            return_exceptions=True,
-        )
-        log_and_emit(
-            job,
-            "info",
-            f"Total: {counters['total']} - Processed: {counters['processed']} - Skipped: {counters['skipped']} - Failed: {counters['failed']}",
-            counters,
-        )
+        await asyncio.gather(*[process_post(source, entry, post, semaphore, job) for entry, post in new_posts])
+        job.log("info", " - ".join(f"{field.title()}: {count}" for field, count in job.counters.items()))
     except Exception as e:
-        run_status = "error"
         logger.exception("Scrape failed")
-        emit(job, counters, "error", f"Scrape failed: {e!r}")
+        job.error(f"Scrape failed: {e!r}")
     finally:
-        await db.release_claims([db_entry for db_entry, _ in new_posts])
-        if failures:
-            log_and_emit(
-                job,
-                "warning",
-                f"{len(failures)} post(s) could not be uploaded and will be retried next run:",
-                counters,
-            )
-            for failure in failures:
-                log_and_emit(
-                    job,
-                    "warning",
-                    f"  {failure['id']} - {failure['error']}",
-                    counters,
-                )
-                log_and_emit(job, "warning", f"    url:  {failure['url']}", counters)
-                log_and_emit(
-                    job, "warning", f"    tags: {failure['tags']}", counters
-                )
+        await db.release_claims([entry for entry, _ in new_posts])
+        report_failures(job)
         if run is not None:
-            await db.update_run(
-                run,
-                counters["total"],
-                counters["processed"],
-                counters["skipped"],
-                counters["failed"],
-                run_status,
-            )
-        job.finished = True
-        job.publish({"status": run_status})
+            await db.update_run(run, **job.counters, status=job.status)
+        job.finish()
+
+
+def check_busy(checks):
+    return any(check.status in db.CHECK_BUSY for check in checks)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -374,7 +260,7 @@ async def activity(request: Request):
         context={
             "runs": runs,
             "checks": checks,
-            "check_running": any(check.status in CHECK_BUSY for check in checks),
+            "check_running": check_busy(checks),
             "repullable": integrity.REPULLABLE,
         },
     )
@@ -382,7 +268,7 @@ async def activity(request: Request):
 
 @app.post("/api/integrity-checks", status_code=202)
 async def start_integrity_check(background_tasks: BackgroundTasks):
-    if any(check.status in CHECK_BUSY for check in await db.get_checks()):
+    if check_busy(await db.get_checks()):
         raise HTTPException(status_code=409, detail="A check is already running")
     background_tasks.add_task(integrity.run_check, await db.create_check())
     return {}
@@ -391,7 +277,7 @@ async def start_integrity_check(background_tasks: BackgroundTasks):
 @app.post("/api/integrity-checks/{check_id}/repull", status_code=202)
 async def start_repull(check_id: int, background_tasks: BackgroundTasks):
     checks = await db.get_checks()
-    if any(check.status in CHECK_BUSY for check in checks):
+    if check_busy(checks):
         raise HTTPException(status_code=409, detail="A check is already running")
     if not checks or checks[0].id != check_id or not checks[0].report:
         raise HTTPException(status_code=409, detail="Only the latest finished check can be re-pulled")
@@ -431,15 +317,14 @@ async def scrape(background_tasks: BackgroundTasks, scrape_request: Scrape):
     job_id = str(uuid.uuid4())
     job = Job()
     jobs[job_id] = job
-    scrape_request.rating = scrape_request.rating or None
     background_tasks.add_task(
         run_scrape,
         job_id,
         job,
         scrape_request.limit,
         scrape_request.source,
-        scrape_request.tags,
-        scrape_request.blacklist_tags,
-        scrape_request.rating,
+        " ".join((scrape_request.tags or "").split()),
+        " ".join((scrape_request.blacklist_tags or "").split()),
+        scrape_request.rating or None,
     )
     return {"job_id": job_id}

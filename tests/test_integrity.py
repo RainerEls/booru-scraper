@@ -103,7 +103,7 @@ class RepullDb:
     async def get_posts(self, ids):
         return [row for row in self.rows if row.id in ids]
 
-    async def add_szurubooru_post_id(self, id, booru_id):
+    async def finish_post(self, id, status, booru_id=None):
         self.linked[id] = booru_id
 
     async def finish_check(self, check_id, status, report=None, error=None):

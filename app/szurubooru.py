@@ -65,34 +65,31 @@ async def sync_tag(tag_name, tag_category):
     r.raise_for_status()
 
 
-async def replace_content(post_id, contentUrl):
+async def replace_content(post_id, content_url):
     current = await api_get(session, f"{BASE_URL}/post/{post_id}", {"fields": "version"})
-    payload = {"version": current.json()["version"], "contentUrl": contentUrl}
+    payload = {"version": current.json()["version"], "contentUrl": content_url}
     r = await session.put(f"{BASE_URL}/post/{post_id}", json=payload, timeout=UPLOAD_TIMEOUT)
     r.raise_for_status()
 
 
-async def upload_post(
-    contentUrl, tags, safety, image_width, image_height, source=None, notes=None
-):
+def note_payload(note, image_width, image_height):
+    x, y, w, h = note["x"], note["y"], note["width"], note["height"]
+    return {
+        "polygon": [
+            [x / image_width, y / image_height],
+            [x / image_width, (y + h) / image_height],
+            [(x + w) / image_width, (y + h) / image_height],
+            [(x + w) / image_width, y / image_height],
+        ],
+        "text": note["body"],
+    }
+
+
+async def upload_post(post, safety):
     await asyncio.sleep(RATE_LIMIT)
-    tags_list = tags.split()
-    payload = {"contentUrl": contentUrl, "tags": tags_list, "safety": safety}
-    if source is not None:
-        payload["source"] = source
-    if notes:
-        payload["notes"] = []
-        for note in notes:
-            x, y, w, h = note["x"], note["y"], note["width"], note["height"]
-            payload["notes"].append(
-                {
-                    "polygon": [
-                        [x / image_width, y / image_height],
-                        [x / image_width, (y + h) / image_height],
-                        [(x + w) / image_width, (y + h) / image_height],
-                        [(x + w) / image_width, y / image_height],
-                    ],
-                    "text": note["body"],
-                }
-            )
+    payload = {"contentUrl": post["file_url"], "tags": post["tags"].split(), "safety": safety}
+    if post.get("source") is not None:
+        payload["source"] = post["source"]
+    if post.get("notes"):
+        payload["notes"] = [note_payload(note, post["width"], post["height"]) for note in post["notes"]]
     return await session.post(f"{BASE_URL}/posts/", json=payload, timeout=UPLOAD_TIMEOUT)

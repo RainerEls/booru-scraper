@@ -46,11 +46,8 @@ class FakeDb:
     async def store_tag(self, tag_name):
         self.tags.add(tag_name)
 
-    async def add_szurubooru_post_id(self, id, szurubooru_post_id):
-        pass
-
-    async def update_post_status(self, source, source_post_id, status):
-        self.posts[(source, source_post_id)]["status"] = status
+    async def finish_post(self, id, status, szurubooru_post_id=None):
+        self.posts[id]["status"] = status
 
 
 class FakeSource(BooruSource):
@@ -183,10 +180,10 @@ def test_updating_a_tag_keeps_its_other_names(monkeypatch):
 
 
 def test_a_database_failure_after_upload_counts_once(monkeypatch, fake_db):
-    async def broken(id, szurubooru_post_id):
+    async def broken(id, status, szurubooru_post_id=None):
         raise RuntimeError("database down")
 
-    monkeypatch.setattr(fake_db, "add_szurubooru_post_id", broken)
+    monkeypatch.setattr(fake_db, "finish_post", broken)
     use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
 
     messages = scrape(monkeypatch, FakeSource([fake_post()]))
@@ -202,7 +199,7 @@ def test_empty_tags_are_not_sent(monkeypatch):
         return httpx.Response(200, json={})
 
     use_szurubooru(monkeypatch, handler)
-    asyncio.run(szurubooru.upload_post("http://x.test/1.png", " a  b ", "safe", 1, 1))
+    asyncio.run(szurubooru.upload_post({"file_url": "http://x.test/1.png", "tags": " a  b "}, "safe"))
 
     assert b'"tags":["a","b"]' in bodies[0].replace(b" ", b"")
 

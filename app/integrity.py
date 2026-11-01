@@ -90,17 +90,10 @@ async def repull_post(issue, kind, source):
     if kind == "damaged":
         await szurubooru.replace_content(issue["booru_post_id"], post["file_url"])
         return "File replaced"
-    r = await szurubooru.upload_post(
-        post["file_url"],
-        post["tags"],
-        source.safety(post),
-        post["width"],
-        post["height"],
-        post.get("source"),
-        await source.grab_notes(post),
-    )
+    post["notes"] = await source.grab_notes(post)
+    r = await szurubooru.upload_post(post, source.safety(post))
     r.raise_for_status()
-    await db.add_szurubooru_post_id(issue["post_id"], r.json()["id"])
+    await db.finish_post(issue["post_id"], "processed", r.json()["id"])
     return "Uploaded again"
 
 

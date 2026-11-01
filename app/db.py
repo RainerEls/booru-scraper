@@ -1,40 +1,32 @@
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import (
-    JSON,
-    UniqueConstraint,
-    delete,
-    func,
-    select,
-    text,
-    update,
-)
+from sqlalchemy import JSON, UniqueConstraint, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app import config
 
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
-DB_USER = config.DB_USER
-DB_PASS = config.DB_PASS
-DB_HOST = config.DB_HOST
-DB_PORT = config.DB_PORT
-DB_NAME = config.DB_NAME
-
 engine = create_async_engine(
-    f"postgresql+asyncpg://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
-    echo=False,
+    f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
+)
+Session = async_sessionmaker(engine, expire_on_commit=False)
+
+CHECK_BUSY = ("running", "repulling")
+
+SCHEMA_UPDATES = (
+    "ALTER TABLE tags DROP COLUMN IF EXISTS type",
+    "CREATE INDEX IF NOT EXISTS ix_posts_md5 ON posts (md5)",
 )
 
-SCHEMA_UPDATES = ("ALTER TABLE tags DROP COLUMN IF EXISTS type",)
+
+def utcnow():
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
-# ------------------------ #
-#          Tables          #
-# ------------------------ #
 class Base(DeclarativeBase):
     pass
 
@@ -47,18 +39,13 @@ class Posts(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(UTC).replace(tzinfo=None)
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(UTC).replace(tzinfo=None),
-        onupdate=lambda: datetime.now(UTC).replace(tzinfo=None),
-    )
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     status: Mapped[str] = mapped_column()
     source: Mapped[str] = mapped_column()
     source_post_id: Mapped[int] = mapped_column()
     szurubooru_post_id: Mapped[int] = mapped_column(nullable=True)
-    md5: Mapped[str] = mapped_column()
+    md5: Mapped[str] = mapped_column(index=True)
     image_url: Mapped[str] = mapped_column()
 
 
@@ -67,13 +54,8 @@ class Tags(Base):
     __table_args__ = (UniqueConstraint("tag"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(UTC).replace(tzinfo=None)
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(UTC).replace(tzinfo=None),
-        onupdate=lambda: datetime.now(UTC).replace(tzinfo=None),
-    )
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     tag: Mapped[str] = mapped_column()
 
 
@@ -83,9 +65,7 @@ class Runs(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     uuid: Mapped[str] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(UTC).replace(tzinfo=None)
-    )
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
     source: Mapped[str] = mapped_column()
     tags: Mapped[str] = mapped_column(nullable=True)
     blacklist_tags: Mapped[str] = mapped_column(nullable=True)
@@ -102,17 +82,12 @@ class IntegrityChecks(Base):
     __tablename__ = "integrity_checks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(UTC).replace(tzinfo=None)
-    )
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
     status: Mapped[str] = mapped_column()
     report: Mapped[dict] = mapped_column(JSON, nullable=True)
     error: Mapped[str] = mapped_column(nullable=True)
 
 
-# ------------------------ #
-#        Functions         #
-# ------------------------ #
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -124,132 +99,91 @@ async def close_db():
     await engine.dispose()
 
 
-async def post_exists(source, source_post_id):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        source_post_known = select(Posts).where(
-            Posts.source == source, Posts.source_post_id == source_post_id
-        )
-        result = (await session.execute(source_post_known)).first()
+async def has_row(table, *conditions):
+    async with Session() as session:
+        return (await session.execute(select(table.id).where(*conditions).limit(1))).first() is not None
 
-    return bool(result is not None)
+
+async def write(statement):
+    async with Session() as session:
+        await session.execute(statement)
+        await session.commit()
+
+
+async def post_exists(source, source_post_id):
+    return await has_row(Posts, Posts.source == source, Posts.source_post_id == source_post_id)
 
 
 async def md5_exists(md5):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        md5_existing = select(Posts).where(Posts.md5 == md5)
-        result = (await session.execute(md5_existing)).first()
+    return await has_row(Posts, Posts.md5 == md5)
 
-    return bool(result is not None)
+
+async def tag_exists(tag_name):
+    return await has_row(Tags, Tags.tag == tag_name)
 
 
 async def claim_post(source, source_post_id, md5, image_url, status):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        claim = (
-            pg_insert(Posts)
-            .values(
-                source=source,
-                source_post_id=source_post_id,
-                szurubooru_post_id=None,
-                md5=md5,
-                image_url=image_url,
-                status=status,
-            )
-            .on_conflict_do_nothing(index_elements=["source", "source_post_id"])
-            .returning(Posts.id)
-        )
+    claim = (
+        pg_insert(Posts)
+        .values(source=source, source_post_id=source_post_id, md5=md5, image_url=image_url, status=status)
+        .on_conflict_do_nothing(index_elements=["source", "source_post_id"])
+        .returning(Posts.id)
+    )
+    async with Session() as session:
         result = await session.execute(claim)
         await session.commit()
         return result.scalar_one_or_none()
 
 
 async def release_claims(post_ids):
-    if not post_ids:
-        return
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        await session.execute(
-            delete(Posts).where(Posts.id.in_(post_ids), Posts.status == "queued")
-        )
-        await session.commit()
+    if post_ids:
+        await write(delete(Posts).where(Posts.id.in_(post_ids), Posts.status == "queued"))
 
 
 async def release_stale_claims():
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        await session.execute(delete(Posts).where(Posts.status.in_(("queued", "failed"))))
-        await session.commit()
+    await write(delete(Posts).where(Posts.status.in_(("queued", "failed"))))
 
 
 async def fail_interrupted_runs():
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        await session.execute(update(Runs).where(Runs.status == "running").values(status="error"))
-        await session.execute(
-            update(IntegrityChecks)
-            .where(IntegrityChecks.status.in_(("running", "repulling")))
-            .values(status="error", error="Interrupted by a restart")
-        )
-        await session.commit()
-
-
-async def tag_exists(tag_name):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        tag_name_exists = select(Tags).where(Tags.tag == tag_name)
-        result = (await session.execute(tag_name_exists)).first()
-
-    return bool(result is not None)
+    await write(update(Runs).where(Runs.status == "running").values(status="error"))
+    await write(
+        update(IntegrityChecks)
+        .where(IntegrityChecks.status.in_(CHECK_BUSY))
+        .values(status="error", error="Interrupted by a restart")
+    )
 
 
 async def count_tags():
-    async with AsyncSession(engine, expire_on_commit=False) as session:
+    async with Session() as session:
         return await session.scalar(select(func.count()).select_from(Tags))
 
 
 async def store_tag(tag_name):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        save_tag = (
-            pg_insert(Tags)
-            .values(tag=tag_name)
-            .on_conflict_do_nothing(index_elements=["tag"])
-        )
-        await session.execute(save_tag)
-        await session.commit()
+    await write(pg_insert(Tags).values(tag=tag_name).on_conflict_do_nothing(index_elements=["tag"]))
 
 
-async def add_szurubooru_post_id(id, szurubooru_post_id):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        find_id = select(Posts).where(Posts.id == id)
-        id_found = (await session.execute(find_id)).scalar_one()
-        id_found.szurubooru_post_id = szurubooru_post_id
-        await session.commit()
-
-
-async def update_post_status(source, source_post_id, status):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        find_post = select(Posts).where(
-            Posts.source == source, Posts.source_post_id == source_post_id
-        )
-        post_found = (await session.execute(find_post)).scalar_one()
-        post_found.status = status
-        await session.commit()
+async def finish_post(id, status, szurubooru_post_id=None):
+    await write(update(Posts).where(Posts.id == id).values(status=status, szurubooru_post_id=szurubooru_post_id))
 
 
 async def get_uploaded_posts():
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        uploaded = select(Posts).where(Posts.szurubooru_post_id.is_not(None))
-        return (await session.execute(uploaded)).scalars().all()
+    async with Session() as session:
+        return (await session.scalars(select(Posts).where(Posts.szurubooru_post_id.is_not(None)))).all()
 
 
 async def get_posts(ids):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        return (await session.execute(select(Posts).where(Posts.id.in_(ids)))).scalars().all()
+    async with Session() as session:
+        return (await session.scalars(select(Posts).where(Posts.id.in_(ids)))).all()
 
 
 async def get_checks():
-    async with AsyncSession(engine, expire_on_commit=False) as session:
+    async with Session() as session:
         latest = select(IntegrityChecks).order_by(IntegrityChecks.created_at.desc()).limit(20)
-        return (await session.execute(latest)).scalars().all()
+        return (await session.scalars(latest)).all()
 
 
 async def create_check():
-    async with AsyncSession(engine, expire_on_commit=False) as session:
+    async with Session() as session:
         check = IntegrityChecks(status="running")
         session.add(check)
         await session.commit()
@@ -257,32 +191,22 @@ async def create_check():
 
 
 async def mark_check_repulling(id):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        await session.execute(
-            update(IntegrityChecks).where(IntegrityChecks.id == id).values(status="repulling")
-        )
-        await session.commit()
+    await write(update(IntegrityChecks).where(IntegrityChecks.id == id).values(status="repulling"))
 
 
 async def finish_check(id, status, report=None, error=None):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        await session.execute(
-            update(IntegrityChecks)
-            .where(IntegrityChecks.id == id)
-            .values(status=status, report=report, error=error)
-        )
-        await session.commit()
+    await write(
+        update(IntegrityChecks).where(IntegrityChecks.id == id).values(status=status, report=report, error=error)
+    )
 
 
 async def get_runs():
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        get_entries = select(Runs).order_by(Runs.created_at.desc())
-        result = (await session.execute(get_entries)).scalars().all()
-    return result
+    async with Session() as session:
+        return (await session.scalars(select(Runs).order_by(Runs.created_at.desc()).limit(100))).all()
 
 
 async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, status):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
+    async with Session() as session:
         run = Runs(
             uuid=uuid,
             source=source,
@@ -292,19 +216,14 @@ async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, sta
             post_limit=post_limit,
             status=status,
         )
-
         session.add(run)
         await session.commit()
         return run.id
 
 
 async def update_run(id, total, processed, skipped, failed, status):
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        find_run = select(Runs).where(Runs.id == id)
-        run_found = (await session.execute(find_run)).scalar_one()
-        run_found.total = total
-        run_found.processed = processed
-        run_found.skipped = skipped
-        run_found.failed = failed
-        run_found.status = status
-        await session.commit()
+    await write(
+        update(Runs)
+        .where(Runs.id == id)
+        .values(total=total, processed=processed, skipped=skipped, failed=failed, status=status)
+    )
