@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 os.environ.update(
     DB_USER="test",
     DB_PASS="test",
@@ -15,3 +17,10 @@ os.environ.update(
     SZURUBOORU_RATE_LIMIT="0",
     YANDERE_RATE_LIMIT="0",
 )
+
+
+@pytest.fixture(autouse=True)
+def no_retry_delays(monkeypatch):
+    from app.sources import base
+
+    monkeypatch.setattr(base, "RETRY_DELAYS", (0, 0, 0, 0))

@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from app import config, constants, db, http, szurubooru
+from app.sources.base import retry_notice
 from app.sources.gelbooru import GelbooruSource
 from app.sources.yandere import YandereSource
 
@@ -174,61 +175,72 @@ async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rat
         run = await db.create_run(
             run_id, booru_source, tags, blacklist_tags, rating, limit, "running"
         )
+        retry_notice.set(lambda message: log_and_emit(job, "warning", message, counters))
         log_and_emit(job, "info", f"Searching {booru_source}", counters)
         scrape_tags = set()
         unknown_tags = set()
 
-        async for result in source.search_posts(
-            tags=tags, blacklist_tags=blacklist_tags, rating=rating
-        ):
-            counters["total"] += 1
-            log_and_emit(job, "debug", "Total increased", counters)
-            if await db.post_exists(source=booru_source, source_post_id=result["id"]):
-                counters["skipped"] += 1
-                log_and_emit(
-                    job,
-                    "debug",
-                    f"{booru_source}: {result['id']} already exists in DB. Skipping",
-                    counters,
-                )
-            elif await db.md5_exists(md5=result["md5"]):
-                counters["skipped"] += 1
-                log_and_emit(
-                    job,
-                    "debug",
-                    f"MD5: {result['md5']} already exists in db. Adding source entry and skipping.",
-                    counters,
-                )
-                await db.claim_post(
-                    source=booru_source,
-                    source_post_id=result["id"],
-                    md5=result["md5"],
-                    image_url=result["file_url"],
-                    status="skipped",
-                )
-            else:
-                db_entry = await db.claim_post(
-                    source=booru_source,
-                    source_post_id=result["id"],
-                    md5=result["md5"],
-                    image_url=result["file_url"],
-                    status="queued",
-                )
-                if db_entry is None:
+        try:
+            async for result in source.search_posts(
+                tags=tags, blacklist_tags=blacklist_tags, rating=rating
+            ):
+                counters["total"] += 1
+                log_and_emit(job, "debug", "Total increased", counters)
+                if await db.post_exists(source=booru_source, source_post_id=result["id"]):
                     counters["skipped"] += 1
                     log_and_emit(
                         job,
                         "debug",
-                        f"{booru_source}: {result['id']} is already claimed by another run. Skipping",
+                        f"{booru_source}: {result['id']} already exists in DB. Skipping",
                         counters,
                     )
+                elif await db.md5_exists(md5=result["md5"]):
+                    counters["skipped"] += 1
+                    log_and_emit(
+                        job,
+                        "debug",
+                        f"MD5: {result['md5']} already exists in db. Adding source entry and skipping.",
+                        counters,
+                    )
+                    await db.claim_post(
+                        source=booru_source,
+                        source_post_id=result["id"],
+                        md5=result["md5"],
+                        image_url=result["file_url"],
+                        status="skipped",
+                    )
                 else:
-                    result["notes"] = await source.grab_notes(result)
-                    new_posts.append((db_entry, result))
-                    scrape_tags.update(result["tags"].split())
-                    logger.debug(f"Appended: {result}")
-                    if len(new_posts) >= limit:
-                        break
+                    db_entry = await db.claim_post(
+                        source=booru_source,
+                        source_post_id=result["id"],
+                        md5=result["md5"],
+                        image_url=result["file_url"],
+                        status="queued",
+                    )
+                    if db_entry is None:
+                        counters["skipped"] += 1
+                        log_and_emit(
+                            job,
+                            "debug",
+                            f"{booru_source}: {result['id']} is already claimed by another run. Skipping",
+                            counters,
+                        )
+                    else:
+                        result["notes"] = await source.grab_notes(result)
+                        new_posts.append((db_entry, result))
+                        scrape_tags.update(result["tags"].split())
+                        logger.debug(f"Appended: {result}")
+                        if len(new_posts) >= limit:
+                            break
+        except Exception as e:
+            run_status = "error"
+            logger.exception("Search failed")
+            emit(
+                job,
+                counters,
+                "error",
+                f"Search failed, continuing with the {len(new_posts)} new post(s) found: {e!r}",
+            )
 
         for tag in scrape_tags:
             if not await db.tag_exists(tag):

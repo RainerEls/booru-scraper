@@ -176,6 +176,20 @@ def test_empty_tags_are_not_sent(monkeypatch):
     assert b'"tags":["a","b"]' in bodies[0].replace(b" ", b"")
 
 
+def test_search_failure_still_uploads_what_was_found(monkeypatch, fake_db):
+    class FailsPartWay(FakeSource):
+        async def search_posts(self, **kwargs):
+            yield fake_post(1)
+            raise RuntimeError("Gelbooru returned HTTP 429")
+
+    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
+    messages = scrape(monkeypatch, FailsPartWay([]))
+
+    assert fake_db.posts[("fake", 1)]["status"] == "processed"
+    assert messages[-1] == {"status": "error"}
+    assert fake_db.runs[1] == "error"
+
+
 def test_search_failure_reaches_the_ui(monkeypatch, fake_db):
     class Broken(FakeSource):
         async def search_posts(self, **kwargs):
