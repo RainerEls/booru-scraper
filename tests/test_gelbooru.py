@@ -5,7 +5,8 @@ import httpx
 import pytest
 
 from app import http
-from app.sources.gelbooru import GelbooruSource, html_note_to_markdown
+from app.sources.base import html_note_to_markdown
+from app.sources.gelbooru import GelbooruSource
 
 
 def post(id):

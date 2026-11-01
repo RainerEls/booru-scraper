@@ -3,20 +3,37 @@ import html
 import logging
 
 from app import config, constants, http
-from app.sources.base import BooruSource
+from app.sources.base import BooruSource, api_get, html_note_to_markdown
 
 logger = logging.getLogger(__name__)
 
+API_URL = "https://yande.re"
 RATE_LIMIT = float(config.YANDERE_RATE_LIMIT)
-YANDERE_RATINGS_CONVERSIONS = constants.YANDERE_RATINGS_CONVERSIONS
+PAGE_SIZE = 100
 
 FRONTEND_TO_YANDERE_RATINGS = {
-    'safe': 's',
-    'sketchy': 'q',
-    'unsafe': 'e',
+    "safe": "s",
+    "sketchy": "q",
+    "unsafe": "e",
 }
 
+TAG_TYPE_IDS = {
+    "general": 0,
+    "artist": 1,
+    "copyright": 3,
+    "character": 4,
+    "circle": 5,
+    "faults": 6,
+}
+
+
 class YandereSource(BooruSource):
+    ratings = constants.YANDERE_RATINGS_CONVERSIONS
+    tag_types = constants.YANDERE_TAG_TYPES
+
+    def __init__(self):
+        self.seen_tag_types = {}
+
     async def search_posts(self, tags="", blacklist_tags="", rating=None):
         terms = ["-" + tag for tag in blacklist_tags.split()] + tags.split()
         if rating:
@@ -28,48 +45,47 @@ class YandereSource(BooruSource):
         while True:
             payloadPost = {
                 "tags": all_tags,
-                "limit": 100,
+                "limit": PAGE_SIZE,
                 "page": page,
+                "api_version": 2,
+                "include_tags": 1,
             }
-            r = await http.yandere_session.get(
-                "https://yande.re/post.json", params=payloadPost
-            )
-            logger.debug(f"Search Post Status Code: {r.status_code}")
+            r = await api_get(http.yandere_session, f"{API_URL}/post.json", payloadPost)
             logger.debug(f"Search Post Raw: {r.text}")
-            posts = r.json()
-            if not posts:
-                return
+            body = r.json()
+            self.seen_tag_types.update(body["tags"])
 
-            for post in posts:
+            for post in body["posts"]:
                 yield {
                     **post,
-                    "tags": " ".join(html.unescape(t) for t in post["tags"].split(" ")),
+                    "tags": " ".join(html.unescape(t) for t in post["tags"].split()),
                 }
+
+            if len(body["posts"]) < PAGE_SIZE:
+                return
 
             page += 1
             await asyncio.sleep(RATE_LIMIT)
 
     async def grab_tags(self, tags):
-
-        total_tags = len(tags)
-        tags_list = list(tags)
-        tags_range = range(0, total_tags, 100)
-        tag_data = []
-
-        for tag_range in tags_range:
-            tag_set = " ".join(tags_list[tag_range : tag_range + 100])
-            payloadTags = {
-                "names": tag_set,
-                "page": "dapi",
-            }
-            r = await http.yandere_session.get(
-                "https://yande.re/tag.json", params=payloadTags
-            )
-            tag_results = r.json()["tag"]
-            tag_data.extend(tag_results)
-            await asyncio.sleep(RATE_LIMIT)
-
-        unescaped_tags = [
-            {**tag, "name": html.unescape(tag["name"])} for tag in tag_data
+        return [
+            {"name": tag, "type": TAG_TYPE_IDS.get(self.seen_tag_types.get(tag), 0)}
+            for tag in tags
         ]
-        return unescaped_tags
+
+    async def grab_notes(self, post):
+        if not post.get("last_noted_at"):
+            return None
+        await asyncio.sleep(RATE_LIMIT)
+        r = await api_get(http.yandere_session, f"{API_URL}/note.json", {"post_id": post["id"]})
+        return [
+            {
+                "x": note["x"],
+                "y": note["y"],
+                "width": note["width"],
+                "height": note["height"],
+                "body": html_note_to_markdown(note["body"]),
+            }
+            for note in r.json()
+            if note["is_active"] and note["width"] and note["height"]
+        ]

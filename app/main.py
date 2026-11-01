@@ -14,12 +14,13 @@ from pydantic import BaseModel, Field
 
 from app import config, constants, db, http, szurubooru
 from app.sources.gelbooru import GelbooruSource
+from app.sources.yandere import YandereSource
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.getLevelName(config.LOGLEVEL))
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-SOURCES = {"gelbooru": GelbooruSource()}
+SOURCES = {"gelbooru": GelbooruSource(), "yandere": YandereSource()}
 
 jobs = {}
 
@@ -95,9 +96,7 @@ async def process_post(
         try:
             contentUrl = post["file_url"]
             tags = post["tags"]
-            safety = constants.GELBOORU_RATINGS_CONVERSIONS.get(
-                post["rating"], "sketchy"
-            )
+            safety = SOURCES[booru_source].ratings.get(post["rating"], "sketchy")
             source = post["source"]
             image_width = post["width"]
             image_height = post["height"]
@@ -189,7 +188,7 @@ async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rat
                 log_and_emit(
                     job,
                     "debug",
-                    f"Gelbooru: {result['id']} already exists in DB. Skipping",
+                    f"{booru_source}: {result['id']} already exists in DB. Skipping",
                     counters,
                 )
             elif await db.md5_exists(md5=result["md5"]):
@@ -220,7 +219,7 @@ async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rat
                     log_and_emit(
                         job,
                         "debug",
-                        f"Gelbooru: {result['id']} is already claimed by another run. Skipping",
+                        f"{booru_source}: {result['id']} is already claimed by another run. Skipping",
                         counters,
                     )
                 else:
@@ -253,9 +252,7 @@ async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rat
                 try:
                     await szurubooru.sync_tag(
                         tag_name=tag["name"],
-                        tag_category=constants.GELBOORU_TAG_TYPES.get(
-                            tag["type"], "general"
-                        ),
+                        tag_category=source.tag_types.get(tag["type"], "general"),
                     )
                 except httpx.HTTPError as e:
                     log_and_emit(
