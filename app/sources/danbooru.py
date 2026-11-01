@@ -1,43 +1,28 @@
 import asyncio
 import logging
-from functools import partial
 
-from app import config, constants, http
-from app.sources.base import (
-    PostTaggedSource,
-    api_get,
-    notes_to_markdown,
-    pages_by_id,
-    pages_by_number,
-)
+from app import config, http
+from app.http import ApiError, api_get
+from app.sources.base import PostTaggedSource, danbooru_style_pages, notes_to_markdown
 
 logger = logging.getLogger(__name__)
 
 API_URL = "https://danbooru.donmai.us"
-RATE_LIMIT = float(config.DANBOORU_RATE_LIMIT)
+RATE_LIMIT = config.rate_limit("DANBOORU")
 PAGE_SIZE = 200
 MAX_NUMBERED_PAGES = 1000
 
-RATING_TERMS = {"safe": "rating:g", "sketchy": "rating:s,q", "unsafe": "rating:e"}
-
-TAG_FIELDS = {
-    "tag_string_general": 0,
-    "tag_string_artist": 1,
-    "tag_string_copyright": 3,
-    "tag_string_character": 4,
-    "tag_string_meta": 5,
-}
+session = http.client(
+    headers={"User-Agent": "booru-scraper"},
+    auth=(config.DANBOORU_USER_ID, config.DANBOORU_API_KEY) if config.DANBOORU_USER_ID else None,
+)
 
 
 async def fetch_page(terms, page):
     try:
-        r = await api_get(
-            http.danbooru_session,
-            f"{API_URL}/posts.json",
-            {"tags": " ".join(terms), "limit": PAGE_SIZE, "page": page},
-        )
-    except RuntimeError as e:
-        if "HTTP 422" in str(e):
+        r = await api_get(session, f"{API_URL}/posts.json", {"tags": " ".join(terms), "limit": PAGE_SIZE, "page": page})
+    except ApiError as e:
+        if e.status == 422:
             raise RuntimeError(
                 "Danbooru refused the search (HTTP 422). Without a paid account it allows 2 tags, plus a rating."
             ) from e
@@ -47,29 +32,28 @@ async def fetch_page(terms, page):
 
 
 class DanbooruSource(PostTaggedSource):
-    ratings = constants.DANBOORU_RATINGS_CONVERSIONS
-    tag_types = constants.DANBOORU_TAG_TYPES
+    ratings = {"g": "safe", "s": "sketchy", "q": "sketchy", "e": "unsafe"}
+    rating_terms = {"safe": "rating:g", "sketchy": "rating:s,q", "unsafe": "rating:e"}
+    tag_categories = {
+        "tag_string_general": "general",
+        "tag_string_artist": "artist",
+        "tag_string_copyright": "copyright",
+        "tag_string_character": "character",
+        "tag_string_meta": "metadata",
+    }
 
     async def search_posts(self, tags="", blacklist_tags="", rating=None):
-        terms = tags.split()
-        if rating:
-            terms.append(RATING_TERMS[rating])
+        terms = self.search_terms(tags, "", rating)
         blacklist = set(blacklist_tags.split())
         logger.debug(terms)
 
-        fetch = partial(fetch_page, terms)
-        if any(term.startswith("order:") for term in terms):
-            posts = pages_by_number(fetch, PAGE_SIZE, MAX_NUMBERED_PAGES, RATE_LIMIT)
-        else:
-            posts = pages_by_id(fetch, PAGE_SIZE, RATE_LIMIT)
-
-        async for post in posts:
+        async for post in danbooru_style_pages(fetch_page, terms, PAGE_SIZE, MAX_NUMBERED_PAGES, RATE_LIMIT):
             post_tags = post["tag_string"].split()
             # Account-restricted posts come back without a file.
             if not post.get("file_url") or blacklist.intersection(post_tags):
                 continue
-            for field, tag_type in TAG_FIELDS.items():
-                self.seen_tag_types.update(dict.fromkeys(post[field].split(), tag_type))
+            for field, category in self.tag_categories.items():
+                self.seen_categories.update(dict.fromkeys(post[field].split(), category))
             yield {
                 **post,
                 # Ugoira files are zips, which szurubooru can't take; large_file_url is a video.
@@ -83,7 +67,5 @@ class DanbooruSource(PostTaggedSource):
         if not post.get("last_noted_at"):
             return None
         await asyncio.sleep(RATE_LIMIT)
-        r = await api_get(
-            http.danbooru_session, f"{API_URL}/notes.json", {"search[post_id]": post["id"]}
-        )
+        r = await api_get(session, f"{API_URL}/notes.json", {"search[post_id]": post["id"]})
         return notes_to_markdown(r.json())

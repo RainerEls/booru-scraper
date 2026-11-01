@@ -3,7 +3,7 @@ import asyncio
 import httpx
 import pytest
 
-from app import http
+from app.sources import danbooru
 from app.sources.danbooru import PAGE_SIZE, DanbooruSource
 
 
@@ -26,7 +26,7 @@ def post(id, **fields):
 
 
 def use_danbooru(monkeypatch, handler):
-    monkeypatch.setattr(http, "danbooru_session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(danbooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
 
 
 def collect(source, **search):
@@ -97,7 +97,7 @@ def test_tag_types_come_from_the_post(monkeypatch):
 
     tags = asyncio.run(source.grab_tags(["cat", "an_artist", "unseen"]))
 
-    assert {t["name"]: source.tag_types[t["type"]] for t in tags} == {
+    assert {t["name"]: t["category"] for t in tags} == {
         "cat": "general",
         "an_artist": "artist",
         "unseen": "general",

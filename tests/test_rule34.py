@@ -3,7 +3,7 @@ import asyncio
 import httpx
 import pytest
 
-from app import http
+from app.sources import gelbooru, rule34
 from app.sources.rule34 import PAGE_SIZE, Rule34Source
 
 
@@ -20,7 +20,7 @@ def post(id, rating="questionable", **fields):
 
 
 def use_rule34(monkeypatch, handler):
-    monkeypatch.setattr(http, "rule34_session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(rule34, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
 
 
 def collect(**search):
@@ -89,7 +89,7 @@ def gelbooru_knows(monkeypatch, tags):
     def handler(request):
         return httpx.Response(200, json={"tag": tags})
 
-    monkeypatch.setattr(http, "gelbooru_session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(gelbooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
 
 
 def test_tags_gelbooru_knows_are_not_looked_up_on_rule34(monkeypatch):
@@ -104,16 +104,16 @@ def test_tags_gelbooru_knows_are_not_looked_up_on_rule34(monkeypatch):
     tags = asyncio.run(Rule34Source().grab_tags(["known", "unknown"]))
 
     assert names == ["unknown"]
-    assert tags == [{"name": "known", "type": 4}, {"name": "unknown", "type": 0}]
+    assert tags == [{"name": "known", "category": "character"}, {"name": "unknown", "category": "general"}]
 
 
 def test_a_gelbooru_failure_falls_back_to_rule34(monkeypatch):
     monkeypatch.setattr(
-        http, "gelbooru_session", httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(401)))
+        gelbooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(401)))
     )
     use_rule34(monkeypatch, lambda request: httpx.Response(200, text='<tags><tag type="1"/></tags>'))
 
-    assert asyncio.run(Rule34Source().grab_tags(["a"])) == [{"name": "a", "type": 1}]
+    assert asyncio.run(Rule34Source().grab_tags(["a"])) == [{"name": "a", "category": "artist"}]
 
 
 def test_tag_lookup_escapes_names(monkeypatch):
@@ -135,7 +135,7 @@ def test_a_failed_lookup_keeps_the_tags_already_found(monkeypatch):
     responses = [httpx.Response(200, text='<tags><tag type="4"/></tags>')] + [httpx.Response(403)]
     use_rule34(monkeypatch, lambda request: responses.pop(0))
 
-    assert asyncio.run(Rule34Source().grab_tags(["first", "second"])) == [{"name": "first", "type": 4}]
+    assert asyncio.run(Rule34Source().grab_tags(["first", "second"])) == [{"name": "first", "category": "character"}]
 
 
 def test_notes_parse_and_skip_inactive_ones(monkeypatch):

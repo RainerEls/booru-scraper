@@ -5,7 +5,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import http, main
+from app import main, szurubooru
 from app.sources.base import BooruSource
 
 
@@ -43,7 +43,7 @@ class FakeDb:
     async def tag_exists(self, tag_name):
         return tag_name in self.tags
 
-    async def store_tag(self, tag_name, tag_type):
+    async def store_tag(self, tag_name):
         self.tags.add(tag_name)
 
     async def add_szurubooru_post_id(self, id, szurubooru_post_id):
@@ -70,7 +70,7 @@ class FakeSource(BooruSource):
         return None
 
     async def grab_tags(self, tags):
-        return [{"name": name, "type": 0} for name in self.tags]
+        return [{"name": name, "category": "general"} for name in self.tags]
 
 
 def fake_post(id=1, tags="cat"):
@@ -99,7 +99,7 @@ def fake_db(monkeypatch):
 
 def use_szurubooru(monkeypatch, handler):
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(http, "szurubooru_session", client)
+    monkeypatch.setattr(szurubooru, "session", client)
 
 
 def run_job():
@@ -155,8 +155,6 @@ def test_failed_tag_sync_is_retried_and_does_not_stop_the_run(monkeypatch, fake_
 
 
 def test_tag_names_are_url_encoded(monkeypatch):
-    from app import szurubooru
-
     paths = []
 
     def handler(request):
@@ -170,8 +168,6 @@ def test_tag_names_are_url_encoded(monkeypatch):
 
 
 def test_updating_a_tag_keeps_its_other_names(monkeypatch):
-    from app import szurubooru
-
     bodies = []
 
     def handler(request):
@@ -199,8 +195,6 @@ def test_a_database_failure_after_upload_counts_once(monkeypatch, fake_db):
 
 
 def test_empty_tags_are_not_sent(monkeypatch):
-    from app import szurubooru
-
     bodies = []
 
     def handler(request):
@@ -313,8 +307,6 @@ def test_only_unfinished_jobs_are_active():
 
 
 def test_only_missing_tag_categories_are_created(monkeypatch):
-    from app import szurubooru
-
     created = []
 
     def handler(request):

@@ -3,18 +3,18 @@ import asyncio
 import httpx
 import pytest
 
-from app.sources import base
+from app import http
 
 
 @pytest.fixture
 def waits(monkeypatch):
-    monkeypatch.setattr(base, "RETRY_DELAYS", (5, 10, 20, 40))
+    monkeypatch.setattr(http, "RETRY_DELAYS", (5, 10, 20, 40))
     recorded = []
 
     async def sleep(seconds):
         recorded.append(seconds)
 
-    monkeypatch.setattr(base.asyncio, "sleep", sleep)
+    monkeypatch.setattr(http.asyncio, "sleep", sleep)
     return recorded
 
 
@@ -27,9 +27,9 @@ def get(responses, notices=None):
 
     async def run():
         if notices is not None:
-            base.run_log.set(lambda level, message: notices.append(message))
+            http.run_log.set(lambda level, message: notices.append(message))
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        return await base.api_get(client, "http://source.test/api", {"api_key": "secret-key"})
+        return await http.api_get(client, "http://source.test/api", {"api_key": "secret-key"})
 
     return asyncio.run(run())
 
@@ -50,7 +50,7 @@ def test_honours_retry_after(waits):
 
 
 def test_gives_up_after_the_last_attempt(waits):
-    with pytest.raises(RuntimeError) as e:
+    with pytest.raises(http.ApiError) as e:
         get([httpx.Response(429) for _ in range(5)])
 
     assert waits == [5, 10, 20, 40]
@@ -64,7 +64,7 @@ def test_connection_errors_surface_after_the_last_attempt(waits):
 
 
 def test_other_client_errors_are_not_retried(waits):
-    with pytest.raises(RuntimeError):
+    with pytest.raises(http.ApiError):
         get([httpx.Response(403)])
 
     assert waits == []

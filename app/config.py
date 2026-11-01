@@ -10,37 +10,31 @@ load_dotenv()
 
 LOGLEVEL = os.getenv("LOGLEVEL", "INFO")
 
-DB_USER = os.getenv("DB_USER", None)
-DB_PASS = os.getenv("DB_PASS", None)
-DB_HOST = os.getenv("DB_HOST", None)
-DB_PORT = os.getenv("DB_PORT", None)
-DB_NAME = os.getenv("DB_NAME", None)
+DB_USER = os.getenv("DB_USER")
+DB_PASS = os.getenv("DB_PASS")
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
 
-SZURUBOORU_BASE_URL = os.getenv("SZURUBOORU_BASE_URL", None)
-SZURUBOORU_USER_ID = os.getenv("SZURUBOORU_USER_ID", None)
-SZURUBOORU_API_TOKEN = os.getenv("SZURUBOORU_API_TOKEN", None)
-SZURUBOORU_RATE_LIMIT = os.getenv("SZURUBOORU_RATE_LIMIT", "1")
-CONCURRENT_UPLOADS = os.getenv("CONCURRENT_UPLOADS", "5")
+SZURUBOORU_BASE_URL = os.getenv("SZURUBOORU_BASE_URL")
+SZURUBOORU_USER_ID = os.getenv("SZURUBOORU_USER_ID")
+SZURUBOORU_API_TOKEN = os.getenv("SZURUBOORU_API_TOKEN")
+CONCURRENT_UPLOADS = int(os.getenv("CONCURRENT_UPLOADS", "5"))
 
-GELBOORU_API_KEY = os.getenv("GELBOORU_API_KEY", None)
-GELBOORU_USER_ID = os.getenv("GELBOORU_USER_ID", None)
-GELBOORU_RATE_LIMIT = os.getenv("GELBOORU_RATE_LIMIT", "1")
+GELBOORU_API_KEY = os.getenv("GELBOORU_API_KEY")
+GELBOORU_USER_ID = os.getenv("GELBOORU_USER_ID")
 
-DANBOORU_USER_ID = os.getenv("DANBOORU_USER_ID", None)
-DANBOORU_API_KEY = os.getenv("DANBOORU_API_KEY", None)
-DANBOORU_RATE_LIMIT = os.getenv("DANBOORU_RATE_LIMIT", "1")
+DANBOORU_USER_ID = os.getenv("DANBOORU_USER_ID")
+DANBOORU_API_KEY = os.getenv("DANBOORU_API_KEY")
 
-E621_USER_ID = os.getenv("E621_USER_ID", None)
-E621_API_KEY = os.getenv("E621_API_KEY", None)
-E621_RATE_LIMIT = os.getenv("E621_RATE_LIMIT", "1")
+E621_USER_ID = os.getenv("E621_USER_ID")
+E621_API_KEY = os.getenv("E621_API_KEY")
 
-RULE34_USER_ID = os.getenv("RULE34_USER_ID", None)
-RULE34_API_KEY = os.getenv("RULE34_API_KEY", None)
-RULE34_RATE_LIMIT = os.getenv("RULE34_RATE_LIMIT", "1")
+RULE34_USER_ID = os.getenv("RULE34_USER_ID")
+RULE34_API_KEY = os.getenv("RULE34_API_KEY")
 
-YANDERE_USER_ID = os.getenv("YANDERE_USER_ID", None)
-YANDERE_PASSWORD_HASH = os.getenv("YANDERE_PASSWORD_HASH", None)
-YANDERE_RATE_LIMIT = os.getenv("YANDERE_RATE_LIMIT", "1")
+YANDERE_USER_ID = os.getenv("YANDERE_USER_ID")
+YANDERE_PASSWORD_HASH = os.getenv("YANDERE_PASSWORD_HASH")
 
 _REQUIRED = {
     "SZURUBOORU_BASE_URL": SZURUBOORU_BASE_URL,
@@ -53,13 +47,17 @@ _REQUIRED = {
     "DB_NAME": DB_NAME,
 }
 
+
+def rate_limit(service):
+    return float(os.getenv(f"{service}_RATE_LIMIT", "1"))
+
+
 def validate():
     missing = [name for name, value in _REQUIRED.items() if not value]
     if missing:
         logger.critical(
             "Missing required environment variable(s): %s - "
             "copy .env.example to .env and fill in the missing values.",
-            ", ".join(missing)
+            ", ".join(missing),
         )
         sys.exit(1)
-        

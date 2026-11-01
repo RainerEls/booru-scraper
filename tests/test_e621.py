@@ -2,7 +2,7 @@ import asyncio
 
 import httpx
 
-from app import http
+from app.sources import e621
 from app.sources.e621 import PAGE_SIZE, E621Source
 
 
@@ -29,7 +29,7 @@ def post(id, url="http://static.test/a.png", **fields):
 
 
 def use_e621(monkeypatch, handler):
-    monkeypatch.setattr(http, "e621_session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(e621, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
 
 
 def collect(source, **search):
@@ -86,7 +86,7 @@ def test_tag_groups_map_onto_szurubooru_categories(monkeypatch):
 
     tags = asyncio.run(source.grab_tags(["cat", "an_artist", "a_helper", "felid", "hi_res"]))
 
-    assert {t["name"]: source.tag_types[t["type"]] for t in tags} == {
+    assert {t["name"]: t["category"] for t in tags} == {
         "cat": "general",
         "an_artist": "artist",
         "a_helper": "artist",

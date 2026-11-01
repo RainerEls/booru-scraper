@@ -24,6 +24,6 @@ os.environ.update(
 
 @pytest.fixture(autouse=True)
 def no_retry_delays(monkeypatch):
-    from app.sources import base
+    from app import http
 
-    monkeypatch.setattr(base, "RETRY_DELAYS", (0, 0, 0, 0))
+    monkeypatch.setattr(http, "RETRY_DELAYS", (0, 0, 0, 0))

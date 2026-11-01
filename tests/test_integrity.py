@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from app import http, integrity
+from app import integrity, szurubooru
+from app.sources.base import BooruSource
 
 
 def post(booru_id):
@@ -33,7 +34,7 @@ def booru(monkeypatch, posts, deleted=(), merged=(), files=None, fail=None):
         limit = int(request.url.params["limit"])
         return httpx.Response(200, json={"total": len(results), "results": results[offset : offset + limit]})
 
-    monkeypatch.setattr(http, "szurubooru_session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(szurubooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
 
 
 def report(rows):
@@ -67,7 +68,7 @@ def test_files_are_checked_by_presence_and_size(monkeypatch):
 
 
 def test_a_post_on_a_later_page_is_not_reported_missing(monkeypatch):
-    ids = list(range(1, integrity.PAGE_SIZE + 6))
+    ids = list(range(1, szurubooru.PAGE_SIZE + 6))
     booru(monkeypatch, posts=ids)
 
     assert report([post(ids[-1])])["issues"] == []
@@ -109,7 +110,7 @@ class RepullDb:
         self.finished = (status, report, error)
 
 
-class RepullSource:
+class RepullSource(BooruSource):
     ratings = {"general": "safe"}
 
     def __init__(self, known=True):
@@ -125,6 +126,9 @@ class RepullSource:
                 "height": 1,
                 "source": "",
             }
+
+    async def grab_tags(self, tags):
+        return []
 
     async def grab_notes(self, post):
         return None
@@ -155,7 +159,7 @@ def repull_booru(monkeypatch, on_booru, deleted=(), writes=None):
             results = [{"id": i, "contentUrl": f"data/posts/{i}.png", "fileSize": 100} for i in on_booru]
         return httpx.Response(200, json={"total": len(results), "results": results})
 
-    monkeypatch.setattr(http, "szurubooru_session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(szurubooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     monkeypatch.setattr(integrity, "REPULL_DELAY", 0)
 
 
@@ -259,7 +263,7 @@ def test_an_unreadable_booru_pulls_nothing(monkeypatch):
     def refused(request):
         return httpx.Response(403)
 
-    monkeypatch.setattr(http, "szurubooru_session", httpx.AsyncClient(transport=httpx.MockTransport(refused)))
+    monkeypatch.setattr(szurubooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(refused)))
     item = issue(1, "missing")
 
     fake = repull(monkeypatch, source_rows(1), [item])

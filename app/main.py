@@ -12,8 +12,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from app import config, constants, db, http, integrity, szurubooru
-from app.sources.base import run_log
+from app import config, db, http, integrity, szurubooru
+from app.http import run_log
 from app.sources.danbooru import DanbooruSource
 from app.sources.e621 import E621Source
 from app.sources.gelbooru import GelbooruSource
@@ -52,7 +52,6 @@ class Job:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.validate()
-    await http.create_clients()
     await db.init_db()
     await db.release_stale_claims()
     await db.fail_interrupted_runs()
@@ -64,7 +63,7 @@ async def lifespan(app: FastAPI):
 
 
 class Scrape(BaseModel):
-    source: constants.Source
+    source: Literal[*SOURCES]
     limit: int = Field(ge=1, le=10000)
     tags: str | None = None
     blacklist_tags: str | None = None
@@ -108,7 +107,7 @@ async def process_post(
         try:
             contentUrl = post["file_url"]
             tags = post["tags"]
-            safety = SOURCES[booru_source].ratings.get(post["rating"], "sketchy")
+            safety = SOURCES[booru_source].safety(post)
             source = post["source"]
             image_width = post["width"]
             image_height = post["height"]
@@ -196,7 +195,7 @@ async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rat
                 counters,
             )
         try:
-            await szurubooru.ensure_tag_categories(source.tag_types.values())
+            await szurubooru.ensure_tag_categories(source.tag_categories.values())
         except httpx.HTTPError as e:
             log_and_emit(job, "warning", f"Could not set up tag categories: {e!r}", counters)
         log_and_emit(job, "info", f"Searching {booru_source}", counters)
@@ -287,17 +286,17 @@ async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rat
                 try:
                     await szurubooru.sync_tag(
                         tag_name=tag["name"],
-                        tag_category=source.tag_types.get(tag["type"], "general"),
+                        tag_category=tag["category"],
                     )
                 except httpx.HTTPError as e:
                     log_and_emit(
                         job, "warning", f"Tag {tag['name']} failed to sync: {e!r}", counters
                     )
                 else:
-                    await db.store_tag(tag_name=tag["name"], tag_type=tag["type"])
+                    await db.store_tag(tag["name"])
 
         log_and_emit(job, "info", f"Uploading {len(new_posts)} post(s)", counters)
-        semaphore = asyncio.Semaphore(int(config.CONCURRENT_UPLOADS))
+        semaphore = asyncio.Semaphore(config.CONCURRENT_UPLOADS)
         await asyncio.gather(
             *[
                 process_post(

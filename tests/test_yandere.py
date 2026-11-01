@@ -2,7 +2,7 @@ import asyncio
 
 import httpx
 
-from app import http
+from app.sources import yandere
 from app.sources.yandere import YandereSource
 
 
@@ -12,7 +12,7 @@ def page(posts, tags=None):
 
 def use_yandere(monkeypatch, handler):
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler), params={"password_hash": "secret"})
-    monkeypatch.setattr(http, "yandere_session", client)
+    monkeypatch.setattr(yandere, "session", client)
 
 
 def collect(source):
@@ -48,7 +48,7 @@ def test_tag_types_come_from_the_search_results(monkeypatch):
 
     tags = asyncio.run(source.grab_tags(["a_circle", "an_artist", "unseen"]))
 
-    categories = {tag["name"]: source.tag_types[tag["type"]] for tag in tags}
+    categories = {tag["name"]: tag["category"] for tag in tags}
     assert categories == {"a_circle": "copyright", "an_artist": "artist", "unseen": "general"}
 
 

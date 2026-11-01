@@ -1,88 +1,74 @@
 import asyncio
-import html
-from urllib.parse import quote
+import base64
+from urllib.parse import quote, urljoin
 
 from app import config, http
+from app.http import api_get
 
-RATE_LIMIT = float(config.SZURUBOORU_RATE_LIMIT)
+RATE_LIMIT = config.rate_limit("SZURUBOORU")
 BASE_URL = config.SZURUBOORU_BASE_URL
+PAGE_SIZE = 100
 UPLOAD_TIMEOUT = 300.0
+
+_token = base64.b64encode(f"{config.SZURUBOORU_USER_ID}:{config.SZURUBOORU_API_TOKEN}".encode()).decode()
+session = http.client(
+    headers={"Authorization": f"Token {_token}", "Content-Type": "application/json", "Accept": "application/json"},
+    timeout=30.0,
+)
+
+
+async def all_results(path, **params):
+    results = []
+    while True:
+        r = await api_get(session, f"{BASE_URL}/{path}", {**params, "limit": PAGE_SIZE, "offset": len(results)})
+        body = r.json()
+        results.extend(body["results"])
+        if not body["results"] or len(results) >= body["total"]:
+            return results
+
+
+async def head_file(content_url):
+    return await session.head(urljoin(f"{BASE_URL}/", f"../{content_url}"))
 
 
 async def ensure_tag_categories(names):
-    r = await http.szurubooru_session.get(f"{BASE_URL}/tag-categories")
-    r.raise_for_status()
+    r = await api_get(session, f"{BASE_URL}/tag-categories")
     existing = r.json()["results"]
     missing = set(names) - {category["name"] for category in existing}
     for order, name in enumerate(sorted(missing), start=len(existing) + 1):
         payload = {"name": name, "color": "default", "order": order}
-        r = await http.szurubooru_session.post(f"{BASE_URL}/tag-categories", json=payload)
+        r = await session.post(f"{BASE_URL}/tag-categories", json=payload)
         r.raise_for_status()
 
 
 async def get_tag(tag_name):
-    r = await http.szurubooru_session.get(f"{BASE_URL}/tag/{quote(tag_name, safe='')}")
-    return r
+    return await session.get(f"{BASE_URL}/tag/{quote(tag_name, safe='')}")
 
 
 async def create_tag(tag_name, tag_category):
     payload = {"names": [tag_name], "category": tag_category}
-    r = await http.szurubooru_session.post(f"{BASE_URL}/tags", json=payload)
-    return r
+    return await session.post(f"{BASE_URL}/tags", json=payload)
 
 
 async def update_tag(tag_name, tag_category, version):
     payload = {"category": tag_category, "version": version}
-    r = await http.szurubooru_session.put(f"{BASE_URL}/tag/{quote(tag_name, safe='')}", json=payload)
-    return r
-
-
-async def merge_tag(remove_name, remove_version, merge_to_name, merge_to_version):
-    payload = {
-        "remove": remove_name,
-        "removeVersion": remove_version,
-        "mergeTo": merge_to_name,
-        "mergeToVersion": merge_to_version,
-    }
-    r = await http.szurubooru_session.post(f"{BASE_URL}/tag-merge/", json=payload)
-    return r
+    return await session.put(f"{BASE_URL}/tag/{quote(tag_name, safe='')}", json=payload)
 
 
 async def sync_tag(tag_name, tag_category):
     await asyncio.sleep(RATE_LIMIT)
-
-    clean_name = html.unescape(tag_name)
-
-    clean_lookup = await get_tag(tag_name=clean_name)
-    if clean_lookup.status_code == 200:
-        clean_tag = clean_lookup.json()
-        r = await update_tag(
-            tag_name=clean_name, tag_category=tag_category, version=clean_tag["version"]
-        )
-        r.raise_for_status()
-
-        if clean_name != tag_name:
-            await asyncio.sleep(RATE_LIMIT)
-            escaped_lookup = await get_tag(tag_name=tag_name)
-            if escaped_lookup.status_code == 200:
-                escaped_tag = escaped_lookup.json()
-                await asyncio.sleep(RATE_LIMIT)
-                await merge_tag(
-                    remove_name=tag_name,
-                    remove_version=escaped_tag["version"],
-                    merge_to_name=clean_name,
-                    merge_to_version=clean_tag["version"],
-                )
+    existing = await get_tag(tag_name)
+    if existing.status_code == 200:
+        r = await update_tag(tag_name, tag_category, existing.json()["version"])
     else:
-        r = await create_tag(tag_name=clean_name, tag_category=tag_category)
-        r.raise_for_status()
+        r = await create_tag(tag_name, tag_category)
+    r.raise_for_status()
 
 
 async def replace_content(post_id, contentUrl):
-    current = await http.szurubooru_session.get(f"{BASE_URL}/post/{post_id}", params={"fields": "version"})
-    current.raise_for_status()
+    current = await api_get(session, f"{BASE_URL}/post/{post_id}", {"fields": "version"})
     payload = {"version": current.json()["version"], "contentUrl": contentUrl}
-    r = await http.szurubooru_session.put(f"{BASE_URL}/post/{post_id}", json=payload, timeout=UPLOAD_TIMEOUT)
+    r = await session.put(f"{BASE_URL}/post/{post_id}", json=payload, timeout=UPLOAD_TIMEOUT)
     r.raise_for_status()
 
 
@@ -109,5 +95,4 @@ async def upload_post(
                     "text": note["body"],
                 }
             )
-    r = await http.szurubooru_session.post(f"{BASE_URL}/posts/", json=payload, timeout=UPLOAD_TIMEOUT)
-    return r
+    return await session.post(f"{BASE_URL}/posts/", json=payload, timeout=UPLOAD_TIMEOUT)
