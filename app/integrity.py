@@ -1,36 +1,20 @@
 import asyncio
 import logging
 from collections import Counter
-from urllib.parse import urljoin
 
 import httpx
 
-from app import config, db, http, szurubooru
-from app.sources.base import api_get
+from app import db, szurubooru
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = config.SZURUBOORU_BASE_URL
-PAGE_SIZE = 100
 CONCURRENT_FILE_CHECKS = 5
 REPULLABLE = ("missing", "damaged")
 REPULL_DELAY = 1.1
 
 
-async def all_results(path, **params):
-    results = []
-    while True:
-        r = await api_get(
-            http.szurubooru_session, f"{BASE_URL}/{path}", {**params, "limit": PAGE_SIZE, "offset": len(results)}
-        )
-        body = r.json()
-        results.extend(body["results"])
-        if not body["results"] or len(results) >= body["total"]:
-            return results
-
-
 async def removal_records(operation):
-    snapshots = await all_results("snapshots", query=f"operation:{operation} type:post")
+    snapshots = await szurubooru.all_results("snapshots", query=f"operation:{operation} type:post")
     return {
         int(snapshot["id"]): f"by {(snapshot['user'] or {}).get('name', 'unknown')}, {snapshot['time']}"
         for snapshot in snapshots
@@ -40,7 +24,7 @@ async def removal_records(operation):
 async def file_problem(booru_post, semaphore):
     async with semaphore:
         try:
-            r = await http.szurubooru_session.head(urljoin(f"{BASE_URL}/", f"../{booru_post['contentUrl']}"))
+            r = await szurubooru.head_file(booru_post["contentUrl"])
         except httpx.TransportError:
             return "unverified", "No response from the file server"
     if r.status_code == 404:
@@ -75,7 +59,7 @@ async def check_post(post, booru_posts, deleted, merged, semaphore):
 
 
 async def build_report(posts):
-    booru_posts = {p["id"]: p for p in await all_results("posts/", fields="id,contentUrl,fileSize")}
+    booru_posts = {p["id"]: p for p in await szurubooru.all_results("posts/", fields="id,contentUrl,fileSize")}
     deleted = await removal_records("deleted")
     merged = await removal_records("merged")
     semaphore = asyncio.Semaphore(CONCURRENT_FILE_CHECKS)
@@ -109,7 +93,7 @@ async def repull_post(issue, kind, source):
     r = await szurubooru.upload_post(
         post["file_url"],
         post["tags"],
-        source.ratings.get(post["rating"], "sketchy"),
+        source.safety(post),
         post["width"],
         post["height"],
         post.get("source"),

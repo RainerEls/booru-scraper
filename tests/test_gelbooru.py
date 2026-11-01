@@ -4,7 +4,7 @@ import logging
 import httpx
 import pytest
 
-from app import http
+from app.http import ApiError
 from app.sources import gelbooru
 from app.sources.base import html_note_to_markdown
 from app.sources.gelbooru import GelbooruSource
@@ -46,7 +46,7 @@ def gelbooru_with_posts(count, requests):
 
 def test_search_fetches_only_the_pages_consumed(monkeypatch):
     requests = []
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_posts(250, requests)))
+    monkeypatch.setattr(gelbooru, "session", gelbooru_client(gelbooru_with_posts(250, requests)))
 
     results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat"), 150))
 
@@ -57,7 +57,7 @@ def test_search_fetches_only_the_pages_consumed(monkeypatch):
 
 def test_search_continues_past_the_offset_cap(monkeypatch):
     requests = []
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_posts(25_050, requests)))
+    monkeypatch.setattr(gelbooru, "session", gelbooru_client(gelbooru_with_posts(25_050, requests)))
 
     results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat"), 100_000))
 
@@ -66,7 +66,7 @@ def test_search_continues_past_the_offset_cap(monkeypatch):
 
 def test_other_sorts_page_by_offset_up_to_the_cap(monkeypatch):
     requests = []
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_posts(25_050, requests)))
+    monkeypatch.setattr(gelbooru, "session", gelbooru_client(gelbooru_with_posts(25_050, requests)))
 
     results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat sort:updated"), 100_000))
 
@@ -114,7 +114,7 @@ def test_score_sort_reaches_every_post_once(monkeypatch, sort_term, ordering):
     # 450 tied posts outnumber the 300 the fake allows by offset.
     scores = [50 - i for i in range(50)] + [0] * 450 + [-1] * 120
     monkeypatch.setattr(gelbooru, "MAX_OFFSET_PAGES", 3)
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_scores(scores)))
+    monkeypatch.setattr(gelbooru, "session", gelbooru_client(gelbooru_with_scores(scores)))
 
     results = asyncio.run(collect(GelbooruSource().search_posts(tags=sort_term), 100_000))
 
@@ -132,7 +132,7 @@ def test_score_sort_reaches_every_post_once(monkeypatch, sort_term, ordering):
 )
 def test_ratings_map_onto_gelbooru_terms(monkeypatch, rating, terms):
     requests = []
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_posts(1, requests)))
+    monkeypatch.setattr(gelbooru, "session", gelbooru_client(gelbooru_with_posts(1, requests)))
 
     asyncio.run(collect(GelbooruSource().search_posts(tags="cat", rating=rating), 1))
 
@@ -149,7 +149,7 @@ def test_requests_do_not_log_the_api_key(monkeypatch, caplog):
     def handler(request):
         return httpx.Response(200, json={"@attributes": {"count": 0}})
 
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(handler))
+    monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     with caplog.at_level(logging.INFO):
         asyncio.run(collect(GelbooruSource().search_posts(), 1))
 
@@ -160,7 +160,7 @@ def test_tag_lookup_with_no_matches_returns_nothing(monkeypatch):
     def handler(request):
         return httpx.Response(200, json={"@attributes": {"count": 0}})
 
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(handler))
+    monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     assert asyncio.run(GelbooruSource().grab_tags({"unknown"})) == []
 
 
@@ -168,8 +168,8 @@ def test_http_errors_do_not_expose_the_api_key(monkeypatch):
     def handler(request):
         return httpx.Response(429)
 
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(handler))
-    with pytest.raises(RuntimeError) as e:
+    monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
+    with pytest.raises(ApiError) as e:
         asyncio.run(collect(GelbooruSource().search_posts(), 1))
 
     assert "429" in str(e.value)
@@ -183,7 +183,7 @@ def test_search_stops_after_a_short_page(monkeypatch):
         pages.append(request.url.params["pid"])
         return httpx.Response(200, json={"post": [post(1)]})
 
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(handler))
+    monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     assert len(asyncio.run(collect(GelbooruSource().search_posts(), 100))) == 1
     assert pages == ["0"]
 
@@ -192,7 +192,7 @@ def test_notes_are_only_requested_for_posts_that_have_them(monkeypatch):
     def handler(request):
         return httpx.Response(200, text='<notes><note x="1" y="2" width="3" height="4" body="hi"/></notes>')
 
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(handler))
+    monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     source = GelbooruSource()
 
     assert asyncio.run(source.grab_notes({"id": 1, "has_notes": "false"})) is None

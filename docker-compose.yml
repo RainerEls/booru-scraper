@@ -51,8 +51,6 @@ services:
       - DB_HOST=database
       - DB_PORT=5432
       - DB_NAME=${DB_NAME}
-      - GELBOORU_API_KEY=${GELBOORU_API_KEY}
-      - GELBOORU_USER_ID=${GELBOORU_USER_ID}
     
     ports:
       - 8192:8000

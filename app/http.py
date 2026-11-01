@@ -1,68 +1,52 @@
-import base64
+import asyncio
+import logging
+from contextvars import ContextVar
 
 import httpx
 
-from app import config
+logger = logging.getLogger(__name__)
 
-GELBOORU_API_KEY = config.GELBOORU_API_KEY
-GELBOORU_USER_ID = config.GELBOORU_USER_ID
-GELBOORU_RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
+RETRY_DELAYS = (5, 10, 20, 40)
+run_log = ContextVar("run_log", default=lambda level, message: getattr(logger, level)(message))
 
-SZURUBOORU_USER_ID = config.SZURUBOORU_USER_ID
-SZURUBOORU_API_TOKEN = config.SZURUBOORU_API_TOKEN
-SZURUBOORU_RATE_LIMIT = float(config.SZURUBOORU_RATE_LIMIT)
-
-szurubooru_session = None
-gelbooru_session = None
-yandere_session = None
-danbooru_session = None
-e621_session = None
-rule34_session = None
-
-szurubooru_token_auth_str = f"{SZURUBOORU_USER_ID}:{SZURUBOORU_API_TOKEN}".encode()
-szurubooru_token_auth = base64.b64encode(szurubooru_token_auth_str)
+_clients = []
 
 
-async def create_clients():
-    global szurubooru_session, gelbooru_session, yandere_session, danbooru_session, e621_session, rule34_session
+class ApiError(httpx.HTTPError):
+    def __init__(self, url, status):
+        super().__init__(f"{url} returned HTTP {status}")
+        self.status = status
 
-    szurubooru_session = httpx.AsyncClient(
-        headers={
-            "Authorization": "Token " + szurubooru_token_auth.decode(encoding="utf-8"),
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        timeout=30.0
-    )
 
-    gelbooru_session = httpx.AsyncClient(
-        params={"api_key": GELBOORU_API_KEY, "user_id": GELBOORU_USER_ID, "json": 1}
-    )
-
-    danbooru_session = httpx.AsyncClient(
-        headers={"User-Agent": "booru-scraper"},
-        auth=(config.DANBOORU_USER_ID, config.DANBOORU_API_KEY) if config.DANBOORU_USER_ID else None,
-    )
-
-    e621_session = httpx.AsyncClient(
-        headers={"User-Agent": f"booru-scraper (by {config.E621_USER_ID or 'anonymous'} on e621)"},
-        auth=(config.E621_USER_ID, config.E621_API_KEY) if config.E621_USER_ID else None,
-    )
-
-    rule34_session = httpx.AsyncClient(
-        params={"api_key": config.RULE34_API_KEY, "user_id": config.RULE34_USER_ID, "json": 1}
-    )
-
-    yandere_auth = {"login": config.YANDERE_USER_ID, "password_hash": config.YANDERE_PASSWORD_HASH}
-    yandere_session = httpx.AsyncClient(params=yandere_auth if config.YANDERE_USER_ID else None)
-
-    
+def client(**options):
+    new_client = httpx.AsyncClient(**options)
+    _clients.append(new_client)
+    return new_client
 
 
 async def close_clients():
-    await szurubooru_session.aclose()
-    await gelbooru_session.aclose()
-    await yandere_session.aclose()
-    await danbooru_session.aclose()
-    await e621_session.aclose()
-    await rule34_session.aclose()
+    for open_client in _clients:
+        await open_client.aclose()
+
+
+async def api_get(session, url, params=None):
+    for delay in RETRY_DELAYS:
+        try:
+            r = await session.get(url, params=params)
+        except httpx.TransportError as e:
+            problem = repr(e)
+        else:
+            if r.status_code != 429 and r.status_code < 500:
+                break
+            problem = f"HTTP {r.status_code}"
+            retry_after = r.headers.get("Retry-After", "")
+            delay = int(retry_after) if retry_after.isdigit() else delay
+        run_log.get()("warning", f"{url} failed with {problem}, retrying in {delay} s")
+        await asyncio.sleep(delay)
+    else:
+        r = await session.get(url, params=params)
+
+    # raise_for_status() would put the query string, and so any credentials, in its message.
+    if r.is_error:
+        raise ApiError(url, r.status_code)
+    return r

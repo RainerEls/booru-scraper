@@ -7,6 +7,7 @@ from sqlalchemy import (
     delete,
     func,
     select,
+    text,
     update,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -27,6 +28,8 @@ engine = create_async_engine(
     f"postgresql+asyncpg://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
     echo=False,
 )
+
+SCHEMA_UPDATES = ("ALTER TABLE tags DROP COLUMN IF EXISTS type",)
 
 
 # ------------------------ #
@@ -72,7 +75,6 @@ class Tags(Base):
         onupdate=lambda: datetime.now(UTC).replace(tzinfo=None),
     )
     tag: Mapped[str] = mapped_column()
-    type: Mapped[int] = mapped_column()
 
 
 class Runs(Base):
@@ -114,6 +116,8 @@ class IntegrityChecks(Base):
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        for statement in SCHEMA_UPDATES:
+            await conn.execute(text(statement))
 
 
 async def close_db():
@@ -198,11 +202,11 @@ async def count_tags():
         return await session.scalar(select(func.count()).select_from(Tags))
 
 
-async def store_tag(tag_name, tag_type):
+async def store_tag(tag_name):
     async with AsyncSession(engine, expire_on_commit=False) as session:
         save_tag = (
             pg_insert(Tags)
-            .values(tag=tag_name, type=tag_type)
+            .values(tag=tag_name)
             .on_conflict_do_nothing(index_elements=["tag"])
         )
         await session.execute(save_tag)

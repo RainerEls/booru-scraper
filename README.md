@@ -59,9 +59,9 @@ pytest
 
 ## Adding a source
 
-Sources implement `search_posts()` and `grab_tags()` from `app/sources/base.py`, and set `ratings` and `tag_types` to their conversion maps from `app/constants.py`. `grab_notes()` is optional. Any category named in `tag_types` is created on the booru if it's missing. Register a new one in the `SOURCES` dict in `app/main.py` and it'll show up in the UI's source dropdown automatically.
+Each source is one module in `app/sources/`. It implements `search_posts()` and `grab_tags()` from `base.py` (`grab_notes()` is optional), creates its `session` with `http.client()`, and sets three maps: `ratings` (its ratings to `safe`/`sketchy`/`unsafe`), `rating_terms` (the reverse, as search terms) and `tag_categories` (its tag types to szurubooru categories, which are created on the booru if missing). `base.py` has paging helpers for the common API styles.
 
-PRs for other sources (Rule34, etc.) are welcome. Add a `Source` entry in `constants.py` for each one. Keep rate limiting in mind (see `YANDERE_RATE_LIMIT`/`GELBOORU_RATE_LIMIT` in `app/config.py` for how existing sources configure theirs) and make sure ratings/tag types get mapped onto the `safe`/`sketchy`/`unsafe` and general/artist/copyright/character/metadata conventions the rest of the app expects.
+Register it in `SOURCES` in `app/main.py` and it shows up in the UI's source dropdown. Add its credentials to `app/config.py` and `.env.example`; its rate limit is read from `<NAME>_RATE_LIMIT` through `config.rate_limit()`.
 
 ## Recent changes
 
