@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from app import config, constants, db, http, szurubooru
 from app.sources.base import retry_notice
 from app.sources.danbooru import DanbooruSource
+from app.sources.e621 import E621Source
 from app.sources.gelbooru import GelbooruSource
 from app.sources.yandere import YandereSource
 
@@ -22,7 +23,12 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.getLevelName(config.LOGLEVEL))
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-SOURCES = {"gelbooru": GelbooruSource(), "danbooru": DanbooruSource(), "yandere": YandereSource()}
+SOURCES = {
+    "gelbooru": GelbooruSource(),
+    "danbooru": DanbooruSource(),
+    "yandere": YandereSource(),
+    "e621": E621Source(),
+}
 
 jobs = {}
 

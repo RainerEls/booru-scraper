@@ -3,7 +3,7 @@ import html
 import logging
 
 from app import config, constants, http
-from app.sources.base import BooruSource, api_get, notes_to_markdown
+from app.sources.base import PostTaggedSource, api_get, notes_to_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +27,9 @@ TAG_TYPE_IDS = {
 }
 
 
-class YandereSource(BooruSource):
+class YandereSource(PostTaggedSource):
     ratings = constants.YANDERE_RATINGS_CONVERSIONS
     tag_types = constants.YANDERE_TAG_TYPES
-
-    def __init__(self):
-        self.seen_tag_types = {}
 
     async def search_posts(self, tags="", blacklist_tags="", rating=None):
         terms = ["-" + tag for tag in blacklist_tags.split()] + tags.split()
@@ -53,7 +50,9 @@ class YandereSource(BooruSource):
             r = await api_get(http.yandere_session, f"{API_URL}/post.json", payloadPost)
             logger.debug(f"Search Post Raw: {r.text}")
             body = r.json()
-            self.seen_tag_types.update(body["tags"])
+            self.seen_tag_types.update(
+                (tag, TAG_TYPE_IDS.get(type_name, 0)) for tag, type_name in body["tags"].items()
+            )
 
             for post in body["posts"]:
                 yield {
@@ -66,12 +65,6 @@ class YandereSource(BooruSource):
 
             page += 1
             await asyncio.sleep(RATE_LIMIT)
-
-    async def grab_tags(self, tags):
-        return [
-            {"name": tag, "type": TAG_TYPE_IDS.get(self.seen_tag_types.get(tag), 0)}
-            for tag in tags
-        ]
 
     async def grab_notes(self, post):
         if not post.get("last_noted_at"):

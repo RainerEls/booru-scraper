@@ -1,8 +1,15 @@
 import asyncio
 import logging
+from functools import partial
 
 from app import config, constants, http
-from app.sources.base import BooruSource, api_get, notes_to_markdown
+from app.sources.base import (
+    PostTaggedSource,
+    api_get,
+    notes_to_markdown,
+    pages_by_id,
+    pages_by_number,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,34 +46,9 @@ async def fetch_page(terms, page):
     return r.json()
 
 
-async def by_id(terms):
-    page = 1
-    while True:
-        posts = await fetch_page(terms, page)
-        for post in posts:
-            yield post
-        if len(posts) < PAGE_SIZE:
-            return
-        page = f"b{posts[-1]['id']}"
-        await asyncio.sleep(RATE_LIMIT)
-
-
-async def by_number(terms):
-    for page in range(1, MAX_NUMBERED_PAGES + 1):
-        posts = await fetch_page(terms, page)
-        for post in posts:
-            yield post
-        if len(posts) < PAGE_SIZE:
-            return
-        await asyncio.sleep(RATE_LIMIT)
-
-
-class DanbooruSource(BooruSource):
+class DanbooruSource(PostTaggedSource):
     ratings = constants.DANBOORU_RATINGS_CONVERSIONS
     tag_types = constants.DANBOORU_TAG_TYPES
-
-    def __init__(self):
-        self.seen_tag_types = {}
 
     async def search_posts(self, tags="", blacklist_tags="", rating=None):
         terms = tags.split()
@@ -75,8 +57,13 @@ class DanbooruSource(BooruSource):
         blacklist = set(blacklist_tags.split())
         logger.debug(terms)
 
-        ordered = any(term.startswith("order:") for term in terms)
-        async for post in by_number(terms) if ordered else by_id(terms):
+        fetch = partial(fetch_page, terms)
+        if any(term.startswith("order:") for term in terms):
+            posts = pages_by_number(fetch, PAGE_SIZE, MAX_NUMBERED_PAGES, RATE_LIMIT)
+        else:
+            posts = pages_by_id(fetch, PAGE_SIZE, RATE_LIMIT)
+
+        async for post in posts:
             post_tags = post["tag_string"].split()
             # Account-restricted posts come back without a file.
             if not post.get("file_url") or blacklist.intersection(post_tags):
@@ -91,9 +78,6 @@ class DanbooruSource(BooruSource):
                 "width": post["image_width"],
                 "height": post["image_height"],
             }
-
-    async def grab_tags(self, tags):
-        return [{"name": tag, "type": self.seen_tag_types.get(tag, 0)} for tag in tags]
 
     async def grab_notes(self, post):
         if not post.get("last_noted_at"):

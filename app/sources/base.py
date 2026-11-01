@@ -62,6 +62,28 @@ async def api_get(session, url, params):
     return r
 
 
+async def pages_by_id(fetch, page_size, delay):
+    page = 1
+    while True:
+        posts = await fetch(page)
+        for post in posts:
+            yield post
+        if len(posts) < page_size:
+            return
+        page = f"b{posts[-1]['id']}"
+        await asyncio.sleep(delay)
+
+
+async def pages_by_number(fetch, page_size, max_pages, delay):
+    for page in range(1, max_pages + 1):
+        posts = await fetch(page)
+        for post in posts:
+            yield post
+        if len(posts) < page_size:
+            return
+        await asyncio.sleep(delay)
+
+
 def notes_to_markdown(notes):
     return [
         {
@@ -90,3 +112,13 @@ class BooruSource(ABC):
 
     async def grab_notes(self, post):
         return None
+
+
+class PostTaggedSource(BooruSource):
+    """A source whose search results already say what type each tag is."""
+
+    def __init__(self):
+        self.seen_tag_types = {}
+
+    async def grab_tags(self, tags):
+        return [{"name": tag, "type": self.seen_tag_types.get(tag, 0)} for tag in tags]
