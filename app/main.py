@@ -190,8 +190,8 @@ async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rat
             log_and_emit(
                 job,
                 "warning",
-                f"{booru_source} is rate limited and looks up tags one at a time, "
-                "so runs on a fresh instance can take hours until more tags are known.",
+                f"{booru_source} is rate limited and looks up many tags one at a time, "
+                "so runs on a fresh instance can be slow until more tags are known.",
                 counters,
             )
         try:

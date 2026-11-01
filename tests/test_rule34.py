@@ -85,23 +85,53 @@ def test_ratings_are_normalised_and_mismatches_dropped(monkeypatch):
     assert results[1]["rating"] == "questionable"
 
 
-def test_tag_lookup_escapes_names_and_defaults_unknown_tags(monkeypatch):
+def gelbooru_knows(monkeypatch, tags):
+    def handler(request):
+        return httpx.Response(200, json={"tag": tags})
+
+    monkeypatch.setattr(http, "gelbooru_session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+
+
+def test_tags_gelbooru_knows_are_not_looked_up_on_rule34(monkeypatch):
+    gelbooru_knows(monkeypatch, [{"name": "known", "type": 4}])
     names = []
 
     def handler(request):
         names.append(request.url.params["name"])
-        if request.url.params["name"] == "entro&#039;pi":
-            return httpx.Response(200, text='<tags type="array"><tag type="1" name="x"/></tags>')
         return httpx.Response(200, text='<tag type="array"/>')
 
     use_rule34(monkeypatch, handler)
-    tags = asyncio.run(Rule34Source().grab_tags(["entro'pi", "unknown"]))
+    tags = asyncio.run(Rule34Source().grab_tags(["known", "unknown"]))
 
-    assert names == ["entro&#039;pi", "unknown"]
-    assert tags == [{"name": "entro'pi", "type": 1}, {"name": "unknown", "type": 0}]
+    assert names == ["unknown"]
+    assert tags == [{"name": "known", "type": 4}, {"name": "unknown", "type": 0}]
+
+
+def test_a_gelbooru_failure_falls_back_to_rule34(monkeypatch):
+    monkeypatch.setattr(
+        http, "gelbooru_session", httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(401)))
+    )
+    use_rule34(monkeypatch, lambda request: httpx.Response(200, text='<tags><tag type="1"/></tags>'))
+
+    assert asyncio.run(Rule34Source().grab_tags(["a"])) == [{"name": "a", "type": 1}]
+
+
+def test_tag_lookup_escapes_names(monkeypatch):
+    gelbooru_knows(monkeypatch, [])
+    names = []
+
+    def handler(request):
+        names.append(request.url.params["name"])
+        return httpx.Response(200, text='<tags><tag type="1"/></tags>')
+
+    use_rule34(monkeypatch, handler)
+    asyncio.run(Rule34Source().grab_tags(["entro'pi"]))
+
+    assert names == ["entro&#039;pi"]
 
 
 def test_a_failed_lookup_keeps_the_tags_already_found(monkeypatch):
+    gelbooru_knows(monkeypatch, [])
     responses = [httpx.Response(200, text='<tags><tag type="4"/></tags>')] + [httpx.Response(403)]
     use_rule34(monkeypatch, lambda request: responses.pop(0))
 
