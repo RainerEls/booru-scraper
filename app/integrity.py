@@ -11,7 +11,6 @@ from app.sources.base import api_get
 logger = logging.getLogger(__name__)
 
 BASE_URL = config.SZURUBOORU_BASE_URL
-FILE_ROOT = BASE_URL.removesuffix("/api") + "/"
 PAGE_SIZE = 100
 CONCURRENT_FILE_CHECKS = 5
 
@@ -39,7 +38,7 @@ async def removal_records(operation):
 async def file_problem(booru_post, semaphore):
     async with semaphore:
         try:
-            r = await http.szurubooru_session.head(urljoin(FILE_ROOT, booru_post["contentUrl"]))
+            r = await http.szurubooru_session.head(urljoin(f"{BASE_URL}/", f"../{booru_post['contentUrl']}"))
         except httpx.TransportError:
             return "unverified", "No response from the file server"
     if r.status_code == 404:
