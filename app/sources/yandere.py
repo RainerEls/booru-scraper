@@ -17,21 +17,15 @@ FRONTEND_TO_YANDERE_RATINGS = {
 }
 
 class YandereSource(BooruSource):
-    async def search_posts(self, limit=5, tags="", blacklist_tags="", rating=None):
-
-        page = 0
-        search_results = []
-        bad_tags = ""
-        rated_search = ""
-
+    async def search_posts(self, tags="", blacklist_tags="", rating=None):
+        terms = ["-" + tag for tag in blacklist_tags.split()] + tags.split()
         if rating:
-            rated_search = f"rating:{FRONTEND_TO_YANDERE_RATINGS.get(rating)}"
-        if blacklist_tags:
-            bad_tags = ["-" + tag for tag in blacklist_tags.split(" ")]
-        all_tags = " ".join(bad_tags) + " " + tags + " " + rated_search
-        logger.debug(str(all_tags))
+            terms.append(f"rating:{FRONTEND_TO_YANDERE_RATINGS.get(rating)}")
+        all_tags = " ".join(terms)
+        logger.debug(all_tags)
 
-        while limit > len(search_results):
+        page = 1
+        while True:
             payloadPost = {
                 "tags": all_tags,
                 "limit": 100,
@@ -42,23 +36,18 @@ class YandereSource(BooruSource):
             )
             logger.debug(f"Search Post Status Code: {r.status_code}")
             logger.debug(f"Search Post Raw: {r.text}")
-            page_results = r.json()
+            posts = r.json()
+            if not posts:
+                return
+
+            for post in posts:
+                yield {
+                    **post,
+                    "tags": " ".join(html.unescape(t) for t in post["tags"].split(" ")),
+                }
+
             page += 1
-            search_results.extend(page_results)
-
-            if not page_results:
-                break
-
             await asyncio.sleep(RATE_LIMIT)
-        
-        search_results = [
-            {**post,
-            "tags": " ".join(html.unescape(t) for t in post["tags"].split(" ")),
-            "rating": YANDERE_RATINGS_CONVERSIONS.get}
-            for post in search_results
-        ]
-        return search_results[:limit]
-
 
     async def grab_tags(self, tags):
 

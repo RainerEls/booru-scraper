@@ -1,11 +1,14 @@
 from abc import ABC, abstractmethod
 
 
-class BooruSource (ABC):
+class BooruSource(ABC):
     @abstractmethod
-    async def search_posts(self, limit=5, tags="", blacklist_tags="", rating=None):
-        pass
+    def search_posts(self, tags="", blacklist_tags="", rating=None):
+        """Yield matching posts, newest first, fetching pages as they are consumed."""
 
     @abstractmethod
     async def grab_tags(self, tags):
         pass
+
+    async def grab_notes(self, post):
+        return None

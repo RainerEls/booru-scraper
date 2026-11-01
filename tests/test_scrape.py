@@ -53,9 +53,17 @@ class FakeSource(BooruSource):
     def __init__(self, posts, tags=()):
         self.posts = posts
         self.tags = tags
+        self.yielded = 0
+        self.notes_for = []
 
-    async def search_posts(self, limit=5, tags="", blacklist_tags="", rating=None):
-        return self.posts[:limit]
+    async def search_posts(self, tags="", blacklist_tags="", rating=None):
+        for post in self.posts:
+            self.yielded += 1
+            yield post
+
+    async def grab_notes(self, post):
+        self.notes_for.append(post["id"])
+        return None
 
     async def grab_tags(self, tags):
         return [{"name": name, "type": 0} for name in self.tags]
@@ -86,11 +94,11 @@ def use_szurubooru(monkeypatch, handler):
     monkeypatch.setattr(http, "szurubooru_session", client)
 
 
-def scrape(monkeypatch, source):
+def scrape(monkeypatch, source, limit=10):
     monkeypatch.setitem(main.SOURCES, "fake", source)
     queue = asyncio.Queue()
     main.job_queues["job"] = queue
-    asyncio.run(main.run_scrape("job", queue, 10, "fake", None, None, None))
+    asyncio.run(main.run_scrape("job", queue, limit, "fake", None, None, None))
     messages = []
     while not queue.empty():
         messages.append(queue.get_nowait())
@@ -107,6 +115,20 @@ def test_rejected_upload_is_retried_next_run(monkeypatch, fake_db):
     assert first[-2]["failed"] == 1
     assert second[-2]["processed"] == 1
     assert fake_db.posts[("fake", 1)]["status"] == "processed"
+
+
+def test_limit_counts_new_posts_not_known_ones(monkeypatch, fake_db):
+    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
+    for id in (1, 2, 3):
+        fake_db.posts[("fake", id)] = {"md5": f"md5-{id}", "status": "processed"}
+    source = FakeSource([fake_post(id) for id in range(1, 11)])
+
+    messages = scrape(monkeypatch, source, limit=2)
+
+    assert messages[-2]["processed"] == 2
+    assert messages[-2]["skipped"] == 3
+    assert source.yielded == 5
+    assert source.notes_for == [4, 5]
 
 
 def test_failed_tag_sync_is_retried_and_does_not_stop_the_run(monkeypatch, fake_db):
@@ -156,6 +178,7 @@ def test_search_failure_reaches_the_ui(monkeypatch, fake_db):
     class Broken(FakeSource):
         async def search_posts(self, **kwargs):
             raise RuntimeError("Gelbooru returned HTTP 429")
+            yield
 
     messages = scrape(monkeypatch, Broken([]))
 
