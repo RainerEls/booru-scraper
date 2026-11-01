@@ -1,6 +1,7 @@
 import asyncio
 import html
 import logging
+import re
 import xml.etree.ElementTree as ET
 
 from app import config, constants, http
@@ -11,9 +12,73 @@ logger = logging.getLogger(__name__)
 API_URL = "https://gelbooru.com/index.php"
 RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
 PAGE_SIZE = 100
-# Gelbooru refuses offsets past 20,000, so only sort: searches, which can't
-# continue from an id, are limited by this.
-MAX_SORTED_PAGES = 201
+# Gelbooru refuses offsets past 20,000.
+MAX_OFFSET_PAGES = 201
+SCORE_SORT = re.compile(r"sort:score(:desc|:asc)?")
+
+
+async def fetch_page(terms, page=0):
+    payloadPost = {
+        "tags": " ".join(terms),
+        "limit": PAGE_SIZE,
+        "page": "dapi",
+        "s": "post",
+        "q": "index",
+        "pid": page,
+    }
+    r = await api_get(http.gelbooru_session, API_URL, payloadPost)
+    logger.debug(f"Search Post Status Code: {r.status_code}")
+    logger.debug(f"Search Post Raw: {r.text}")
+    return [
+        {**post, "tags": " ".join(html.unescape(t) for t in post["tags"].split(" "))}
+        for post in r.json().get("post", [])
+    ]
+
+
+async def by_id(terms):
+    cursor = []
+    while True:
+        posts = await fetch_page(terms + cursor)
+        for post in posts:
+            yield post
+        if len(posts) < PAGE_SIZE:
+            return
+        cursor = [f"id:<{posts[-1]['id']}"]
+        await asyncio.sleep(RATE_LIMIT)
+
+
+async def by_offset(terms):
+    for page in range(MAX_OFFSET_PAGES):
+        posts = await fetch_page(terms, page)
+        for post in posts:
+            yield post
+        if len(posts) < PAGE_SIZE:
+            return
+        await asyncio.sleep(RATE_LIMIT)
+
+
+async def by_score(terms, sort_term):
+    """Offset page to the cap, finish the score it stopped on by id, then restart beyond it.
+
+    Tied posts have no stable order, and a single score can outnumber the cap.
+    """
+    beyond = ">" if sort_term.endswith(":asc") else "<"
+    unsorted_terms = [term for term in terms if term != sort_term]
+    bound = []
+    while True:
+        seen = set()
+        last = None
+        async for post in by_offset(terms + bound):
+            seen.add(post["id"])
+            last = post
+            yield post
+        if len(seen) < MAX_OFFSET_PAGES * PAGE_SIZE:
+            return
+        async for post in by_id(unsorted_terms + [f"score:{last['score']}"]):
+            if post["id"] not in seen:
+                yield post
+        bound = [f"score:{beyond}{last['score']}"]
+
 
 class GelbooruSource(BooruSource):
     ratings = constants.GELBOORU_RATINGS_CONVERSIONS
@@ -23,40 +88,18 @@ class GelbooruSource(BooruSource):
         terms = ["-" + tag for tag in blacklist_tags.split()] + tags.split()
         if rating:
             terms.append(f"rating:{constants.FRONTEND_TO_GELBOORU_RATINGS.get(rating)}")
-        custom_order = any(term.startswith("sort:") for term in terms)
         logger.debug(terms)
 
-        page = 0
-        cursor = []
-        while page < MAX_SORTED_PAGES:
-            payloadPost = {
-                "tags": " ".join(terms + cursor),
-                "limit": PAGE_SIZE,
-                "page": "dapi",
-                "s": "post",
-                "q": "index",
-                "pid": page,
-            }
-            r = await api_get(http.gelbooru_session, API_URL, payloadPost)
-            logger.debug(f"Search Post Status Code: {r.status_code}")
-            logger.debug(f"Search Post Raw: {r.text}")
-            posts = r.json().get("post", [])
+        sort_term = next((term for term in terms if term.startswith("sort:")), None)
+        if sort_term is None:
+            posts = by_id(terms)
+        elif SCORE_SORT.fullmatch(sort_term):
+            posts = by_score(terms, sort_term)
+        else:
+            posts = by_offset(terms)
 
-            for post in posts:
-                yield {
-                    **post,
-                    "tags": " ".join(html.unescape(t) for t in post["tags"].split(" ")),
-                }
-
-            if len(posts) < PAGE_SIZE:
-                return
-
-            if custom_order:
-                page += 1
-            else:
-                cursor = [f"id:<{posts[-1]['id']}"]
-
-            await asyncio.sleep(RATE_LIMIT)
+        async for post in posts:
+            yield post
 
     async def grab_tags(self, tags):
 

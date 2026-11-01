@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from app import http
+from app.sources import gelbooru
 from app.sources.base import html_note_to_markdown
 from app.sources.gelbooru import GelbooruSource
 
@@ -63,14 +64,62 @@ def test_search_continues_past_the_offset_cap(monkeypatch):
     assert [p["id"] for p in results] == list(range(25_050, 0, -1))
 
 
-def test_sorted_search_pages_by_offset_up_to_the_cap(monkeypatch):
+def test_other_sorts_page_by_offset_up_to_the_cap(monkeypatch):
     requests = []
     monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_posts(25_050, requests)))
 
-    results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat sort:score"), 100_000))
+    results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat sort:updated"), 100_000))
 
     assert len(results) == 20_100
-    assert set(requests) == {"cat sort:score"}
+    assert set(requests) == {"cat sort:updated"}
+
+
+def gelbooru_with_scores(scores):
+    """Answer like Gelbooru for score sorts: ties in no id order, score: and id:< filters applied."""
+    all_posts = [{**post(id), "score": score} for id, score in enumerate(scores, start=1)]
+
+    def handler(request):
+        terms = request.url.params["tags"].split()
+        matches = all_posts
+        ordered = False
+        for term in terms:
+            name, _, value = term.partition(":")
+            if name == "score" and value[0] in "<>":
+                bound = int(value[1:])
+                matches = [p for p in matches if (p["score"] < bound if value[0] == "<" else p["score"] > bound)]
+            elif name == "score":
+                matches = [p for p in matches if p["score"] == int(value)]
+            elif name == "id":
+                matches = [p for p in matches if p["id"] < int(value[1:])]
+            elif name == "sort":
+                ordered = value.endswith("asc") and "asc" or "desc"
+        if ordered:
+            tie_order = sorted(matches, key=lambda p: (p["id"] * 7919) % 1009)
+            matches = sorted(tie_order, key=lambda p: p["score"], reverse=ordered == "desc")
+        else:
+            matches = sorted(matches, key=lambda p: -p["id"])
+        offset = int(request.url.params["pid"]) * 100
+        if offset > 200:
+            return httpx.Response(200, text="Too deep! Pull it back some.")
+        return httpx.Response(200, json={"post": matches[offset : offset + 100]})
+
+    return handler
+
+
+@pytest.mark.parametrize(
+    "sort_term, ordering",
+    [("sort:score", -1), ("sort:score:desc", -1), ("sort:score:asc", 1)],
+)
+def test_score_sort_reaches_every_post_once(monkeypatch, sort_term, ordering):
+    # 450 tied posts outnumber the 300 the fake allows by offset.
+    scores = [50 - i for i in range(50)] + [0] * 450 + [-1] * 120
+    monkeypatch.setattr(gelbooru, "MAX_OFFSET_PAGES", 3)
+    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_scores(scores)))
+
+    results = asyncio.run(collect(GelbooruSource().search_posts(tags=sort_term), 100_000))
+
+    assert sorted(p["id"] for p in results) == list(range(1, len(scores) + 1))
+    assert [p["score"] for p in results] == sorted(scores, key=lambda score: ordering * score)
 
 
 def test_note_markup_becomes_markdown():
