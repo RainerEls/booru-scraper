@@ -51,7 +51,7 @@
 
     <div class="form-row">
       <div class="form-group">
-        <label for="blacklist">Blacklisted Tags</label>
+        <label for="blacklist_tags">Blacklisted Tags</label>
         <input
           type="text"
           id="blacklist_tags"
@@ -178,18 +178,7 @@
     if (el) el.addEventListener('input', saveFormState);
   });
 
-  form.addEventListener('submit', function(e) {
-    e.preventDefault();
-
-    const payload = {
-      source:    document.getElementById('source').value,
-      rating:    document.getElementById('rating').value,
-      limit:     parseInt(document.getElementById('limit').value),
-      tags:      document.getElementById('tags').value.trim(),
-      blacklist_tags: document.getElementById('blacklist_tags').value.trim(),
-    };
-
-    // Reset UI
+  function setRunning() {
     progressFill.style.width = '0%';
     progressPct.textContent = '0%';
     counts.processed.textContent = '0';
@@ -202,79 +191,86 @@
     progressSection.classList.remove('hidden');
     submitBtn.disabled = true;
     submitLabel.textContent = 'Running…';
+  }
 
-    // POST to trigger the job, then open SSE stream
+  function setFinished(badgeClass, badgeText) {
+    submitBtn.disabled = false;
+    submitLabel.textContent = 'Start Scrape';
+    statusBadge.className = 'status-badge status-badge--' + badgeClass;
+    statusBadge.textContent = badgeText;
+  }
+
+  function followJob(jobId) {
+    setRunning();
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource(`/scrape/progress/${jobId}`);
+
+    eventSource.onmessage = function(e) {
+      const msg = JSON.parse(e.data);
+
+      if (msg.total !== undefined) counts.total.textContent = msg.total;
+      if (msg.processed !== undefined) counts.processed.textContent = msg.processed;
+      if (msg.skipped   !== undefined) counts.skipped.textContent   = msg.skipped;
+      if (msg.failed    !== undefined) counts.failed.textContent    = msg.failed;
+
+      if (msg.total > 0) {
+        const done = msg.processed + msg.skipped + msg.failed;
+        const pct = Math.round((done / msg.total) * 100);
+        progressFill.style.width = pct + '%';
+        progressPct.textContent = pct + '%';
+      }
+
+      if (msg.log) {
+        const line = document.createElement('div');
+        line.className = 'log-line log-line--' + (msg.level || 'info');
+        line.textContent = msg.log;
+        logOutput.appendChild(line);
+        logOutput.scrollTop = logOutput.scrollHeight;
+      }
+
+      if (msg.status) {
+        eventSource.close();
+        setFinished(msg.status, msg.status === 'done' ? 'Done' : 'Error');
+      }
+    };
+
+    eventSource.onerror = function() {
+      eventSource.close();
+      setFinished('error', 'Connection lost');
+    };
+  }
+
+  fetch('/api/scrapes/active')
+    .then(res => res.json())
+    .then(active => {
+      if (active.length) followJob(active[active.length - 1]);
+    });
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const payload = {
+      source:    document.getElementById('source').value,
+      rating:    document.getElementById('rating').value,
+      limit:     parseInt(document.getElementById('limit').value),
+      tags:      document.getElementById('tags').value.trim(),
+      blacklist_tags: document.getElementById('blacklist_tags').value.trim(),
+    };
+
     fetch('/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
     .then(res => {
-      if (!res.ok) {
-        res.json().then(err => {
-          console.error('Scrape request failed:', err);
-          submitBtn.disabled = false;
-          submitLabel.textContent = 'Start Scrape';
-          statusBadge.className = 'status-badge status-badge--error';
-          statusBadge.textContent = 'Request failed';
-          progressSection.classList.remove('hidden');
-        });
-        return;
-      }
+      if (!res.ok) throw new Error(`Scrape request failed: ${res.status}`);
       return res.json();
     })
-    .then(data => {
-      if (!data) return;
-      console.log(data)
-      const jobId = data.job_id;
-
-      if (eventSource) eventSource.close();
-      eventSource = new EventSource(`/scrape/progress/${jobId}`);
-
-      eventSource.onmessage = function(e) {
-        const msg = JSON.parse(e.data);
-
-        if (msg.total) counts.total.textContent = msg.total;
-        if (msg.processed !== undefined) counts.processed.textContent = msg.processed;
-        if (msg.skipped   !== undefined) counts.skipped.textContent   = msg.skipped;
-        if (msg.failed    !== undefined) counts.failed.textContent    = msg.failed;
-
-        if (msg.total && msg.total > 0) {
-          const done = (msg.processed || 0) + (msg.skipped || 0) + (msg.failed || 0);
-          const pct = Math.round((done / msg.total) * 100);
-          progressFill.style.width = pct + '%';
-          progressPct.textContent = pct + '%';
-        }
-
-        if (msg.log) {
-          const line = document.createElement('div');
-          line.className = 'log-line log-line--' + (msg.level || 'info');
-          line.textContent = msg.log;
-          logOutput.appendChild(line);
-          logOutput.scrollTop = logOutput.scrollHeight;
-        }
-
-        if (msg.status === 'done' || msg.status === 'error') {
-          eventSource.close();
-          submitBtn.disabled = false;
-          submitLabel.textContent = 'Start Scrape';
-          statusBadge.className = 'status-badge status-badge--' + (msg.status === 'done' ? 'done' : 'error');
-          statusBadge.textContent = msg.status === 'done' ? 'Done' : 'Error';
-        }
-      };
-
-      eventSource.onerror = function() {
-        eventSource.close();
-        submitBtn.disabled = false;
-        submitLabel.textContent = 'Start Scrape';
-        statusBadge.className = 'status-badge status-badge--error';
-        statusBadge.textContent = 'Connection lost';
-      };
-    })
+    .then(data => followJob(data.job_id))
     .catch(err => {
       console.error(err);
-      submitBtn.disabled = false;
-      submitLabel.textContent = 'Start Scrape';
+      progressSection.classList.remove('hidden');
+      setFinished('error', 'Request failed');
     });
   });
 </script>
