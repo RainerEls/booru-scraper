@@ -1,6 +1,6 @@
+import logging
 import os
 import sys
-import logging
 
 from dotenv import load_dotenv
 
@@ -43,7 +43,7 @@ def validate():
     missing = [name for name, value in _REQUIRED.items() if not value]
     if missing:
         logger.critical(
-            f"Missing required environment variable(s): %s - "
+            "Missing required environment variable(s): %s - "
             "copy .env.example to .env and fill in the missing values.",
             ", ".join(missing)
         )
