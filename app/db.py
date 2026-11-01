@@ -179,7 +179,7 @@ async def fail_interrupted_runs():
         await session.execute(update(Runs).where(Runs.status == "running").values(status="error"))
         await session.execute(
             update(IntegrityChecks)
-            .where(IntegrityChecks.status == "running")
+            .where(IntegrityChecks.status.in_(("running", "repulling")))
             .values(status="error", error="Interrupted by a restart")
         )
         await session.commit()
@@ -233,6 +233,11 @@ async def get_uploaded_posts():
         return (await session.execute(uploaded)).scalars().all()
 
 
+async def get_posts(ids):
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        return (await session.execute(select(Posts).where(Posts.id.in_(ids)))).scalars().all()
+
+
 async def get_checks():
     async with AsyncSession(engine, expire_on_commit=False) as session:
         latest = select(IntegrityChecks).order_by(IntegrityChecks.created_at.desc()).limit(20)
@@ -245,6 +250,14 @@ async def create_check():
         session.add(check)
         await session.commit()
         return check.id
+
+
+async def mark_check_repulling(id):
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        await session.execute(
+            update(IntegrityChecks).where(IntegrityChecks.id == id).values(status="repulling")
+        )
+        await session.commit()
 
 
 async def finish_check(id, status, report=None, error=None):

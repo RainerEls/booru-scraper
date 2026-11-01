@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 
 import httpx
@@ -9,6 +10,7 @@ from app import http, integrity
 
 def post(booru_id):
     return SimpleNamespace(
+        id=booru_id,
         source="gelbooru", source_post_id=booru_id * 10, szurubooru_post_id=booru_id, image_url="http://src.test/a.png"
     )
 
@@ -89,3 +91,179 @@ def test_an_unreadable_booru_reports_nothing(monkeypatch, path):
     assert finished["status"] == "error"
     assert finished["report"] is None
     assert "HTTP 403" in finished["error"]
+
+
+class RepullDb:
+    def __init__(self, rows):
+        self.rows = rows
+        self.linked = {}
+        self.finished = None
+
+    async def get_posts(self, ids):
+        return [row for row in self.rows if row.id in ids]
+
+    async def add_szurubooru_post_id(self, id, booru_id):
+        self.linked[id] = booru_id
+
+    async def finish_check(self, check_id, status, report=None, error=None):
+        self.finished = (status, report, error)
+
+
+class RepullSource:
+    ratings = {"general": "safe"}
+
+    def __init__(self, known=True):
+        self.known = known
+
+    async def search_posts(self, tags=""):
+        if self.known:
+            yield {
+                "file_url": "http://src.test/new.png",
+                "tags": "a b",
+                "rating": "general",
+                "width": 1,
+                "height": 1,
+                "source": "",
+            }
+
+    async def grab_notes(self, post):
+        return None
+
+
+def issue(booru_id, kind):
+    return {"kind": kind, "post_id": booru_id, "booru_post_id": booru_id, "source": "s", "source_post_id": booru_id * 10}
+
+
+def repull_booru(monkeypatch, on_booru, deleted=(), writes=None):
+    def handler(request):
+        path = request.url.path
+        if request.method == "HEAD":
+            damaged = path.endswith("/2.png")
+            return httpx.Response(404 if damaged else 200, headers={"content-length": "100"})
+        if request.method == "POST" and path.endswith("/posts/"):
+            writes.append(("upload", json.loads(request.content)))
+            return httpx.Response(200, json={"id": 77})
+        if request.method == "PUT":
+            writes.append(("replace", path, json.loads(request.content)))
+            return httpx.Response(200, json={})
+        if "/post/" in path:
+            return httpx.Response(200, json={"version": 5})
+        if path.endswith("/snapshots"):
+            ids = deleted if "deleted" in request.url.params["query"] else ()
+            results = [{"id": str(i), "user": {"name": "admin"}, "time": "now"} for i in ids]
+        else:
+            results = [{"id": i, "contentUrl": f"data/posts/{i}.png", "fileSize": 100} for i in on_booru]
+        return httpx.Response(200, json={"total": len(results), "results": results})
+
+    monkeypatch.setattr(http, "szurubooru_session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(integrity, "REPULL_DELAY", 0)
+
+
+def repull(monkeypatch, rows, issues, source=None):
+    fake = RepullDb(rows)
+    monkeypatch.setattr(integrity, "db", fake)
+    report = {"counts": {}, "issues": issues}
+    asyncio.run(integrity.run_repull(1, report, {"s": source or RepullSource()}))
+    return fake
+
+
+def source_rows(*ids):
+    return [SimpleNamespace(**{**vars(post(i)), "source": "s", "source_post_id": i * 10}) for i in ids]
+
+
+def test_missing_posts_upload_again_and_relink(monkeypatch):
+    writes = []
+    repull_booru(monkeypatch, on_booru=[], writes=writes)
+    item = issue(1, "missing")
+
+    fake = repull(monkeypatch, source_rows(1), [item])
+
+    assert writes[0][0] == "upload"
+    assert writes[0][1]["contentUrl"] == "http://src.test/new.png"
+    assert writes[0][1]["safety"] == "safe"
+    assert fake.linked == {1: 77}
+    assert item["repull"] == "Uploaded again"
+
+
+def test_damaged_files_are_replaced_on_the_same_post(monkeypatch):
+    writes = []
+    repull_booru(monkeypatch, on_booru=[2], writes=writes)
+    item = issue(2, "damaged")
+
+    fake = repull(monkeypatch, source_rows(2), [item])
+
+    assert writes == [("replace", "/api/post/2", {"version": 5, "contentUrl": "http://src.test/new.png"})]
+    assert fake.linked == {}
+    assert item["repull"] == "File replaced"
+
+
+def test_a_post_deleted_since_the_check_is_left_alone(monkeypatch):
+    writes = []
+    repull_booru(monkeypatch, on_booru=[], deleted=[1], writes=writes)
+    item = issue(1, "missing")
+
+    repull(monkeypatch, source_rows(1), [item])
+
+    assert writes == []
+    assert item["repull"] == "Left alone, as it's now deleted"
+
+
+def test_deleted_and_merged_posts_are_never_pulled(monkeypatch):
+    writes = []
+    repull_booru(monkeypatch, on_booru=[], writes=writes)
+    items = [issue(1, "deleted"), issue(2, "merged")]
+
+    repull(monkeypatch, source_rows(1, 2), items)
+
+    assert writes == []
+    assert all("repull" not in item for item in items)
+
+
+def test_a_post_the_source_lost_is_reported(monkeypatch):
+    writes = []
+    repull_booru(monkeypatch, on_booru=[], writes=writes)
+    item = issue(1, "missing")
+
+    repull(monkeypatch, source_rows(1), [item], RepullSource(known=False))
+
+    assert writes == []
+    assert item["repull"] == "The source no longer has this post"
+
+
+def test_one_failure_does_not_stop_the_rest(monkeypatch):
+    writes = []
+    repull_booru(monkeypatch, on_booru=[], writes=writes)
+    items = [issue(1, "missing"), issue(3, "missing")]
+
+    class Flaky(RepullSource):
+        calls = 0
+
+        async def search_posts(self, tags=""):
+            Flaky.calls += 1
+            if Flaky.calls == 1:
+                raise RuntimeError("HTTP 500")
+            async for post in super().search_posts(tags):
+                yield post
+
+    fake = repull(monkeypatch, source_rows(1, 3), items, Flaky())
+
+    assert items[0]["repull"].startswith("Failed")
+    assert items[1]["repull"] == "Uploaded again"
+    assert fake.finished[0] == "done"
+
+
+def test_an_unreadable_booru_pulls_nothing(monkeypatch):
+    writes = []
+    repull_booru(monkeypatch, on_booru=[], writes=writes)
+
+    def refused(request):
+        return httpx.Response(403)
+
+    monkeypatch.setattr(http, "szurubooru_session", httpx.AsyncClient(transport=httpx.MockTransport(refused)))
+    item = issue(1, "missing")
+
+    fake = repull(monkeypatch, source_rows(1), [item])
+
+    assert writes == []
+    assert "repull" not in item
+    assert "Nothing was re-pulled" in fake.finished[2]

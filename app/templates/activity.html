@@ -12,7 +12,7 @@
   </button>
 </div>
 
-<p class="section-note">Compares every post this app uploaded with what's on szurubooru. Nothing is changed.</p>
+<p class="section-note">Compares every post this app uploaded with what's on szurubooru. A check changes nothing; only Re-pull does, and it never touches deleted or merged posts.</p>
 
 {% if checks %}
 <div class="card card--flush">
@@ -32,6 +32,7 @@
     <tbody>
       {% for check in checks %}
       {% set counts = check.report.counts if check.report else {} %}
+      {% set to_repull = (check.report.issues if check.report else []) | selectattr("kind", "in", repullable) | rejectattr("repull", "defined") | list %}
       <tr>
         <td class="mono time-cell">{{ check.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
         <td class="num green">{{ counts.intact or 0 }}</td>
@@ -40,10 +41,17 @@
         <td class="num amber">{{ counts.unverified or 0 }}</td>
         <td class="num">{{ counts.deleted or 0 }}</td>
         <td class="num">{{ counts.merged or 0 }}</td>
-        <td><span class="status-badge status-badge--{{ check.status }}">{{ check.status }}</span></td>
+        <td><span class="status-badge status-badge--{{ 'running' if check.status == 'repulling' else check.status }}">{{ check.status }}</span></td>
       </tr>
+      {% if loop.first and to_repull and not check_running %}
+      <tr>
+        <td colspan="8" class="check-detail">
+          <button type="button" class="btn btn--primary" id="repull-btn" data-check="{{ check.id }}" data-count="{{ to_repull | length }}">Re-pull {{ to_repull | length }} missing or damaged post(s)</button>
+        </td>
+      </tr>
+      {% endif %}
       {% if check.error %}
-      <tr><td colspan="8" class="check-detail red">Nothing was reported, as the check couldn't finish: {{ check.error }}</td></tr>
+      <tr><td colspan="8" class="check-detail red">{{ check.error }}</td></tr>
       {% endif %}
       {% if check.report and check.report.issues %}
       <tr>
@@ -56,6 +64,7 @@
                 <span class="status-badge status-badge--{{ 'error' if issue.kind in ('missing', 'damaged') else 'skipped' }}">{{ issue.kind }}</span>
                 {{ issue.source }} {{ issue.source_post_id }}, booru post {{ issue.booru_post_id }}: {{ issue.detail }}
                 <a href="{{ issue.image_url }}" rel="noreferrer">source file</a>
+                {% if issue.repull %}<strong class="check-repull">{{ issue.repull }}</strong>{% endif %}
               </li>
               {% endfor %}
             </ul>
@@ -129,6 +138,14 @@
     this.disabled = true;
     fetch('/api/integrity-checks', { method: 'POST' }).then(() => location.reload());
   });
+  const repullBtn = document.getElementById('repull-btn');
+  if (repullBtn) {
+    repullBtn.addEventListener('click', function() {
+      if (!confirm(`Re-pull ${this.dataset.count} post(s) from their sources? This writes to szurubooru.`)) return;
+      this.disabled = true;
+      fetch(`/api/integrity-checks/${this.dataset.check}/repull`, { method: 'POST' }).then(() => location.reload());
+    });
+  }
   {% if check_running %}
   setTimeout(() => location.reload(), 3000);
   {% endif %}

@@ -13,7 +13,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 - Dedup against your szurubooru instance by MD5 and by source post ID, so re-running a scrape won't create duplicates
 - Automatically pulls in and syncs any tags it doesn't already know about
 - Run history stored in Postgres
-- Integrity checks that compare uploaded posts with what's on szurubooru, telling deliberately deleted or merged posts apart from ones that went missing. They only report, and never change anything
+- Integrity checks that compare uploaded posts with what's on szurubooru, telling deliberately deleted or merged posts apart from ones that went missing. They only report, with a separate re-pull button for posts that are missing or damaged, which never touches deleted or merged ones
 - Pluggable source architecture, with Gelbooru, Danbooru, Yandere, e621 and Rule34 wired up
 
 ## Stack

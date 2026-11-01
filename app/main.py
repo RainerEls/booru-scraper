@@ -32,6 +32,7 @@ SOURCES = {
     "rule34": Rule34Source(),
 }
 FEW_KNOWN_TAGS = 3000
+CHECK_BUSY = ("running", "repulling")
 
 jobs = {}
 
@@ -374,16 +375,29 @@ async def activity(request: Request):
         context={
             "runs": runs,
             "checks": checks,
-            "check_running": any(check.status == "running" for check in checks),
+            "check_running": any(check.status in CHECK_BUSY for check in checks),
+            "repullable": integrity.REPULLABLE,
         },
     )
 
 
 @app.post("/api/integrity-checks", status_code=202)
 async def start_integrity_check(background_tasks: BackgroundTasks):
-    if any(check.status == "running" for check in await db.get_checks()):
+    if any(check.status in CHECK_BUSY for check in await db.get_checks()):
         raise HTTPException(status_code=409, detail="A check is already running")
     background_tasks.add_task(integrity.run_check, await db.create_check())
+    return {}
+
+
+@app.post("/api/integrity-checks/{check_id}/repull", status_code=202)
+async def start_repull(check_id: int, background_tasks: BackgroundTasks):
+    checks = await db.get_checks()
+    if any(check.status in CHECK_BUSY for check in checks):
+        raise HTTPException(status_code=409, detail="A check is already running")
+    if not checks or checks[0].id != check_id or not checks[0].report:
+        raise HTTPException(status_code=409, detail="Only the latest finished check can be re-pulled")
+    await db.mark_check_repulling(check_id)
+    background_tasks.add_task(integrity.run_repull, check_id, checks[0].report, SOURCES)
     return {}
 
 
