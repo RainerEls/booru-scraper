@@ -169,6 +169,35 @@ def test_tag_names_are_url_encoded(monkeypatch):
     assert paths == [b"/api/tag/what%3F%2350%25"]
 
 
+def test_updating_a_tag_keeps_its_other_names(monkeypatch):
+    from app import szurubooru
+
+    bodies = []
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"names": ["cat", "neko"], "version": 3})
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    use_szurubooru(monkeypatch, handler)
+    asyncio.run(szurubooru.sync_tag("neko", "general"))
+
+    assert bodies == [{"category": "general", "version": 3}]
+
+
+def test_a_database_failure_after_upload_counts_once(monkeypatch, fake_db):
+    async def broken(id, szurubooru_post_id):
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(fake_db, "add_szurubooru_post_id", broken)
+    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
+
+    messages = scrape(monkeypatch, FakeSource([fake_post()]))
+
+    assert (messages[-2]["processed"], messages[-2]["failed"]) == (0, 1)
+
+
 def test_empty_tags_are_not_sent(monkeypatch):
     from app import szurubooru
 
