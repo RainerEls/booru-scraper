@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 API_URL = "https://gelbooru.com/index.php"
 RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
+PAGE_SIZE = 100
+# Gelbooru refuses offsets past 20,000.
+MAX_PAGES = 201
 
 _TAG_PAIRS = [
     (r"<b>|<strong>", r"</b>|</strong>", "**"),
@@ -49,58 +52,37 @@ async def api_get(params):
 
 
 class GelbooruSource(BooruSource):
-    async def search_posts(self, limit=5, tags="", blacklist_tags="", rating=None):
-
-        page = 0
-        search_results = []
-        bad_tags = ""
-        rated_search = ""
-
+    async def search_posts(self, tags="", blacklist_tags="", rating=None):
+        terms = ["-" + tag for tag in blacklist_tags.split()] + tags.split()
         if rating:
-            rated_search = (
-                f"rating:{constants.FRONTEND_TO_GELBOORU_RATINGS.get(rating)}"
-            )
-        if blacklist_tags:
-            bad_tags = ["-" + tag for tag in blacklist_tags.split(" ")]
-        all_tags = " ".join(bad_tags) + " " + tags + " " + rated_search
-        logger.debug(str(all_tags))
+            terms.append(f"rating:{constants.FRONTEND_TO_GELBOORU_RATINGS.get(rating)}")
+        all_tags = " ".join(terms)
+        logger.debug(all_tags)
 
-        while limit > len(search_results):
+        for page in range(MAX_PAGES):
             payloadPost = {
                 "tags": all_tags,
-                "limit": 100,
+                "limit": PAGE_SIZE,
                 "page": "dapi",
                 "s": "post",
                 "q": "index",
                 "pid": page,
             }
             r = await api_get(payloadPost)
-            r_json = r.json()
             logger.debug(f"Search Post Status Code: {r.status_code}")
             logger.debug(f"Search Post Raw: {r.text}")
-            page_results = r_json.get("post", [])
-            total_count = r_json["@attributes"]["count"]
-            page += 1
-            search_results.extend(page_results)
+            posts = r.json().get("post", [])
 
-            if not page_results or len(search_results) >= total_count:
-                break
+            for post in posts:
+                yield {
+                    **post,
+                    "tags": " ".join(html.unescape(t) for t in post["tags"].split(" ")),
+                }
+
+            if len(posts) < PAGE_SIZE:
+                return
 
             await asyncio.sleep(RATE_LIMIT)
-
-        search_results = search_results[:limit]
-        final_results = []
-        for post in search_results:
-            post = {
-                **post,
-                "tags": " ".join(html.unescape(t) for t in post["tags"].split(" ")),
-            }
-            if post.get("has_notes") == "true":
-                post["notes"] = await self.grab_notes(post["id"])
-                logger.debug(f"Notes: {post['notes']}")
-                await asyncio.sleep(RATE_LIMIT)
-            final_results.append(post)
-        return final_results
 
     async def grab_tags(self, tags):
 
@@ -127,12 +109,15 @@ class GelbooruSource(BooruSource):
         ]
         return unescaped_tags
 
-    async def grab_notes(self, id):
+    async def grab_notes(self, post):
+        if post.get("has_notes") != "true":
+            return None
+        await asyncio.sleep(RATE_LIMIT)
         payloadNote = {
             "page": "dapi",
             "s": "note",
             "q": "index",
-            "post_id": id,
+            "post_id": post["id"],
         }
         r = await api_get(payloadNote)
         root = ET.fromstring(r.text)

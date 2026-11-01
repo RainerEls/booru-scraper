@@ -8,7 +8,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 
 ## Features
 
-- Web UI for starting scrape jobs (source, rating, tag/blacklist filters, post limit)
+- Web UI for starting scrape jobs (source, rating, tag/blacklist filters, how many new posts to fetch)
 - Live progress over server-sent events, with a running log and pass/fail counts
 - Dedup against your szurubooru instance by MD5 and by source post ID, so re-running a scrape won't create duplicates
 - Automatically pulls in and syncs any tags it doesn't already know about

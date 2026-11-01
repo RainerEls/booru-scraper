@@ -86,9 +86,7 @@ async def process_post(
             source = post["source"]
             image_width = post["width"]
             image_height = post["height"]
-            notes = post.get(
-                "notes"
-            )  # Uses .get() because most posts won't have notes added and will raise a KeyError
+            notes = post["notes"]
 
             logger.debug("Attempting to upload post to szurubooru")
             r = await szurubooru.upload_post(
@@ -150,10 +148,8 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
     run_status = "done"
     new_posts = []
     failures = []
-    if tags:
-        tags = " ".join(tags.split())
-    if blacklist_tags:
-        blacklist_tags = " ".join(blacklist_tags.split())
+    tags = " ".join((tags or "").split())
+    blacklist_tags = " ".join((blacklist_tags or "").split())
 
     logger.info(
         f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist Tags: [{blacklist_tags}]"
@@ -163,13 +159,12 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
     )
 
     try:
-        scrape_results = await source.search_posts(
-            limit=limit, tags=tags, blacklist_tags=blacklist_tags, rating=rating
-        )
         scrape_tags = set()
         unknown_tags = set()
 
-        for result in scrape_results:
+        async for result in source.search_posts(
+            tags=tags, blacklist_tags=blacklist_tags, rating=rating
+        ):
             counters["total"] += 1
             log_and_queue(queue, "debug", "Total increased", counters)
             if await db.post_exists(source=booru_source, source_post_id=result["id"]):
@@ -212,9 +207,12 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
                         counters,
                     )
                 else:
+                    result["notes"] = await source.grab_notes(result)
                     new_posts.append((db_entry, result))
                     scrape_tags.update(result["tags"].split())
                     logger.debug(f"Appended: {result}")
+                    if len(new_posts) >= limit:
+                        break
 
         for tag in scrape_tags:
             if not await db.tag_exists(tag):
