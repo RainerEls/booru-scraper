@@ -6,13 +6,13 @@ from typing import Annotated, Literal
 
 import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.sse import EventSourceResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from app import config, constants, db, http, szurubooru
+from app import config, constants, db, http, integrity, szurubooru
 from app.sources.base import run_log
 from app.sources.danbooru import DanbooruSource
 from app.sources.e621 import E621Source
@@ -359,12 +359,32 @@ async def get_sources():
     return list(SOURCES.keys())
 
 
-@app.get("/history", response_class=HTMLResponse)
-async def history(request: Request):
+@app.get("/history")
+async def history():
+    return RedirectResponse("/activity", status_code=308)
+
+
+@app.get("/activity", response_class=HTMLResponse)
+async def activity(request: Request):
     runs = await db.get_runs()
+    checks = await db.get_checks()
     return templates.TemplateResponse(
-        request=request, name="history.html", context={"runs": runs}
+        request=request,
+        name="activity.html",
+        context={
+            "runs": runs,
+            "checks": checks,
+            "check_running": any(check.status == "running" for check in checks),
+        },
     )
+
+
+@app.post("/api/integrity-checks", status_code=202)
+async def start_integrity_check(background_tasks: BackgroundTasks):
+    if any(check.status == "running" for check in await db.get_checks()):
+        raise HTTPException(status_code=409, detail="A check is already running")
+    background_tasks.add_task(integrity.run_check, await db.create_check())
+    return {}
 
 
 @app.get("/api/scrapes/active")

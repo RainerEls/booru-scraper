@@ -2,6 +2,7 @@ import logging
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    JSON,
     UniqueConstraint,
     delete,
     func,
@@ -95,6 +96,18 @@ class Runs(Base):
     status: Mapped[str] = mapped_column()
 
 
+class IntegrityChecks(Base):
+    __tablename__ = "integrity_checks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(UTC).replace(tzinfo=None)
+    )
+    status: Mapped[str] = mapped_column()
+    report: Mapped[dict] = mapped_column(JSON, nullable=True)
+    error: Mapped[str] = mapped_column(nullable=True)
+
+
 # ------------------------ #
 #        Functions         #
 # ------------------------ #
@@ -164,6 +177,11 @@ async def release_stale_claims():
 async def fail_interrupted_runs():
     async with AsyncSession(engine, expire_on_commit=False) as session:
         await session.execute(update(Runs).where(Runs.status == "running").values(status="error"))
+        await session.execute(
+            update(IntegrityChecks)
+            .where(IntegrityChecks.status == "running")
+            .values(status="error", error="Interrupted by a restart")
+        )
         await session.commit()
 
 
@@ -206,6 +224,36 @@ async def update_post_status(source, source_post_id, status):
         )
         post_found = (await session.execute(find_post)).scalar_one()
         post_found.status = status
+        await session.commit()
+
+
+async def get_uploaded_posts():
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        uploaded = select(Posts).where(Posts.szurubooru_post_id.is_not(None))
+        return (await session.execute(uploaded)).scalars().all()
+
+
+async def get_checks():
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        latest = select(IntegrityChecks).order_by(IntegrityChecks.created_at.desc()).limit(20)
+        return (await session.execute(latest)).scalars().all()
+
+
+async def create_check():
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        check = IntegrityChecks(status="running")
+        session.add(check)
+        await session.commit()
+        return check.id
+
+
+async def finish_check(id, status, report=None, error=None):
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        await session.execute(
+            update(IntegrityChecks)
+            .where(IntegrityChecks.id == id)
+            .values(status=status, report=report, error=error)
+        )
         await session.commit()
 
 
