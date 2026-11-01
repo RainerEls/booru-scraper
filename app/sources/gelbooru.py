@@ -11,8 +11,9 @@ logger = logging.getLogger(__name__)
 API_URL = "https://gelbooru.com/index.php"
 RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
 PAGE_SIZE = 100
-# Gelbooru refuses offsets past 20,000.
-MAX_PAGES = 201
+# Gelbooru refuses offsets past 20,000, so only sort: searches, which can't
+# continue from an id, are limited by this.
+MAX_SORTED_PAGES = 201
 
 class GelbooruSource(BooruSource):
     ratings = constants.GELBOORU_RATINGS_CONVERSIONS
@@ -22,12 +23,14 @@ class GelbooruSource(BooruSource):
         terms = ["-" + tag for tag in blacklist_tags.split()] + tags.split()
         if rating:
             terms.append(f"rating:{constants.FRONTEND_TO_GELBOORU_RATINGS.get(rating)}")
-        all_tags = " ".join(terms)
-        logger.debug(all_tags)
+        custom_order = any(term.startswith("sort:") for term in terms)
+        logger.debug(terms)
 
-        for page in range(MAX_PAGES):
+        page = 0
+        cursor = []
+        while page < MAX_SORTED_PAGES:
             payloadPost = {
-                "tags": all_tags,
+                "tags": " ".join(terms + cursor),
                 "limit": PAGE_SIZE,
                 "page": "dapi",
                 "s": "post",
@@ -47,6 +50,11 @@ class GelbooruSource(BooruSource):
 
             if len(posts) < PAGE_SIZE:
                 return
+
+            if custom_order:
+                page += 1
+            else:
+                cursor = [f"id:<{posts[-1]['id']}"]
 
             await asyncio.sleep(RATE_LIMIT)
 

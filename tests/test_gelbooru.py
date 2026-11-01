@@ -26,23 +26,51 @@ async def collect(posts, count):
     return results
 
 
-def test_search_fetches_only_the_pages_consumed(monkeypatch):
-    pages = []
+def gelbooru_with_posts(count, requests):
+    """Answer like Gelbooru: newest first, honouring id:< and refusing deep offsets."""
+    newest = count
 
     def handler(request):
-        pid = int(request.url.params["pid"])
-        pages.append(pid)
-        return httpx.Response(
-            200,
-            json={"@attributes": {"count": 250}, "post": [post(pid * 100 + i) for i in range(100)]},
-        )
+        tags = request.url.params["tags"]
+        requests.append(tags)
+        below = next((int(t[4:]) for t in tags.split() if t.startswith("id:<")), newest + 1)
+        offset = int(request.url.params["pid"]) * 100
+        if offset > 20_000:
+            return httpx.Response(200, text="Too deep! Pull it back some.")
+        ids = range(below - 1 - offset, max(below - 1 - offset - 100, 0), -1)
+        return httpx.Response(200, json={"post": [post(id) for id in ids]})
 
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(handler))
+    return handler
+
+
+def test_search_fetches_only_the_pages_consumed(monkeypatch):
+    requests = []
+    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_posts(250, requests)))
+
     results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat"), 150))
 
-    assert pages == [0, 1]
-    assert len(results) == 150
+    assert requests == ["cat", "cat id:<151"]
+    assert [p["id"] for p in results] == list(range(250, 100, -1))
     assert results[0]["tags"] == "a b'c"
+
+
+def test_search_continues_past_the_offset_cap(monkeypatch):
+    requests = []
+    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_posts(25_050, requests)))
+
+    results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat"), 100_000))
+
+    assert [p["id"] for p in results] == list(range(25_050, 0, -1))
+
+
+def test_sorted_search_pages_by_offset_up_to_the_cap(monkeypatch):
+    requests = []
+    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(gelbooru_with_posts(25_050, requests)))
+
+    results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat sort:score"), 100_000))
+
+    assert len(results) == 20_100
+    assert set(requests) == {"cat sort:score"}
 
 
 def test_note_markup_becomes_markdown():
@@ -80,21 +108,6 @@ def test_http_errors_do_not_expose_the_api_key(monkeypatch):
 
     assert "429" in str(e.value)
     assert "secret-key" not in str(e.value)
-
-
-def test_search_stops_at_the_deepest_page_gelbooru_allows(monkeypatch):
-    pages = []
-
-    def handler(request):
-        pid = int(request.url.params["pid"])
-        pages.append(pid)
-        return httpx.Response(200, json={"post": [post(pid * 100 + i) for i in range(100)]})
-
-    monkeypatch.setattr(http, "gelbooru_session", gelbooru_client(handler))
-    results = asyncio.run(collect(GelbooruSource().search_posts(), 100_000))
-
-    assert pages[-1] == 200
-    assert len(results) == 20_100
 
 
 def test_search_stops_after_a_short_page(monkeypatch):
