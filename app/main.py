@@ -4,12 +4,13 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import BackgroundTasks, FastAPI, Request
+import httpx
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.sse import EventSourceResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import config, constants, db, http, szurubooru
 from app.sources.gelbooru import GelbooruSource
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
     await http.create_clients()
     await db.init_db()
     await db.release_stale_claims()
+    await db.fail_interrupted_runs()
 
     yield
 
@@ -37,8 +39,8 @@ async def lifespan(app: FastAPI):
 
 
 class Scrape(BaseModel):
-    source: constants.Source | None = "Unknown"
-    limit: int
+    source: constants.Source
+    limit: int = Field(ge=1, le=10000)
     tags: str | None = None
     blacklist_tags: str | None = None
     rating: Literal["safe", "sketchy", "unsafe", ""] | None = None
@@ -130,14 +132,13 @@ async def process_post(
                 logger.debug(
                     f"Szurubooru creation failed with status code: {r.status_code}"
                 )
-                await db.update_post_status(booru_source, source_id, "failed")
         except Exception as e:
             bump(
                 queue,
                 counters,
                 "failed",
                 "error",
-                f"Unhandled error for post {source_id}: {e}",
+                f"Unhandled error for post {source_id}: {e!r}",
             )
             logger.exception(f"Unhandled exception processing post {source_id}")
 
@@ -212,8 +213,7 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
                     )
                 else:
                     new_posts.append((db_entry, result))
-                    scrape_tags.update(result["tags"].split(" "))
-                    logger.debug(result["tags"].split(" "))
+                    scrape_tags.update(result["tags"].split())
                     logger.debug(f"Appended: {result}")
 
         for tag in scrape_tags:
@@ -226,13 +226,19 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
             new_tags = await source.grab_tags(unknown_tags)
             for tag in new_tags:
                 logger.debug(f"Tag data: {tag}")
-                await db.store_tag(tag_name=tag["name"], tag_type=tag["type"])
-                await szurubooru.sync_tag(
-                    tag_name=tag["name"],
-                    tag_category=constants.GELBOORU_TAG_TYPES.get(
-                        tag["type"], "general"
-                    ),
-                )
+                try:
+                    await szurubooru.sync_tag(
+                        tag_name=tag["name"],
+                        tag_category=constants.GELBOORU_TAG_TYPES.get(
+                            tag["type"], "general"
+                        ),
+                    )
+                except httpx.HTTPError as e:
+                    log_and_queue(
+                        queue, "warning", f"Tag {tag['name']} failed to sync: {e!r}", counters
+                    )
+                else:
+                    await db.store_tag(tag_name=tag["name"], tag_type=tag["type"])
 
         semaphore = asyncio.Semaphore(int(config.CONCURRENT_UPLOADS))
         await asyncio.gather(
@@ -252,14 +258,15 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
         )
     except Exception as e:
         run_status = "error"
-        logger.exception(f"Scrape failed: {e}")
+        logger.exception("Scrape failed")
+        emit(queue, counters, "error", f"Scrape failed: {e!r}")
     finally:
         await db.release_claims([db_entry for db_entry, _ in new_posts])
         if failures:
             log_and_queue(
                 queue,
                 "warning",
-                f"{len(failures)} post(s) could not be uploaded and need handling by hand:",
+                f"{len(failures)} post(s) could not be uploaded and will be retried next run:",
                 counters,
             )
             for failure in failures:
@@ -315,6 +322,8 @@ async def scrape_progress(job_id):
 
 @app.post("/scrape")
 async def scrape(background_tasks: BackgroundTasks, scrape_request: Scrape):
+    if scrape_request.source not in SOURCES:
+        raise HTTPException(status_code=400, detail=f"Source {scrape_request.source} is not available")
     job_id = str(uuid.uuid4())
     queue = asyncio.Queue()
     job_queues[job_id] = queue

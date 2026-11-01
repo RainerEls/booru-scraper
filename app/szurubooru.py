@@ -1,14 +1,16 @@
 import asyncio
 import html
+from urllib.parse import quote
 
 from app import config, http
 
 RATE_LIMIT = float(config.SZURUBOORU_RATE_LIMIT)
 BASE_URL = config.SZURUBOORU_BASE_URL
+UPLOAD_TIMEOUT = 300.0
 
 
 async def get_tag(tag_name):
-    r = await http.szurubooru_session.get(f"{BASE_URL}/tag/{tag_name}")
+    r = await http.szurubooru_session.get(f"{BASE_URL}/tag/{quote(tag_name, safe='')}")
     return r
 
 
@@ -20,7 +22,7 @@ async def create_tag(tag_name, tag_category):
 
 async def update_tag(tag_name, tag_category, version):
     payload = {"names": [tag_name], "category": tag_category, "version": version}
-    r = await http.szurubooru_session.put(f"{BASE_URL}/tag/{tag_name}", json=payload)
+    r = await http.szurubooru_session.put(f"{BASE_URL}/tag/{quote(tag_name, safe='')}", json=payload)
     return r
 
 
@@ -43,9 +45,10 @@ async def sync_tag(tag_name, tag_category):
     clean_lookup = await get_tag(tag_name=clean_name)
     if clean_lookup.status_code == 200:
         clean_tag = clean_lookup.json()
-        await update_tag(
+        r = await update_tag(
             tag_name=clean_name, tag_category=tag_category, version=clean_tag["version"]
         )
+        r.raise_for_status()
 
         if clean_name != tag_name:
             await asyncio.sleep(RATE_LIMIT)
@@ -60,14 +63,15 @@ async def sync_tag(tag_name, tag_category):
                     merge_to_version=clean_tag["version"],
                 )
     else:
-        await create_tag(tag_name=clean_name, tag_category=tag_category)
+        r = await create_tag(tag_name=clean_name, tag_category=tag_category)
+        r.raise_for_status()
 
 
 async def upload_post(
     contentUrl, tags, safety, image_width, image_height, source=None, notes=None
 ):
     await asyncio.sleep(RATE_LIMIT)
-    tags_list = tags.split(" ")
+    tags_list = tags.split()
     payload = {"contentUrl": contentUrl, "tags": tags_list, "safety": safety}
     if source is not None:
         payload["source"] = source
@@ -86,5 +90,5 @@ async def upload_post(
                     "text": note["body"],
                 }
             )
-    r = await http.szurubooru_session.post(f"{BASE_URL}/posts/", json=payload)
+    r = await http.szurubooru_session.post(f"{BASE_URL}/posts/", json=payload, timeout=UPLOAD_TIMEOUT)
     return r

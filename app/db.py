@@ -5,6 +5,7 @@ from sqlalchemy import (
     UniqueConstraint,
     delete,
     select,
+    update,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -155,7 +156,13 @@ async def release_claims(post_ids):
 
 async def release_stale_claims():
     async with AsyncSession(engine, expire_on_commit=False) as session:
-        await session.execute(delete(Posts).where(Posts.status == "queued"))
+        await session.execute(delete(Posts).where(Posts.status.in_(("queued", "failed"))))
+        await session.commit()
+
+
+async def fail_interrupted_runs():
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        await session.execute(update(Runs).where(Runs.status == "running").values(status="error"))
         await session.commit()
 
 

@@ -9,6 +9,7 @@ from app.sources.base import BooruSource
 
 logger = logging.getLogger(__name__)
 
+API_URL = "https://gelbooru.com/index.php"
 RATE_LIMIT = float(config.GELBOORU_RATE_LIMIT)
 
 _TAG_PAIRS = [
@@ -39,6 +40,14 @@ def html_note_to_markdown(text):
     return text + closers
 
 
+async def api_get(params):
+    r = await http.gelbooru_session.get(API_URL, params=params)
+    # Not raise_for_status(): its message includes the URL, and so the API key.
+    if r.is_error:
+        raise RuntimeError(f"Gelbooru returned HTTP {r.status_code}")
+    return r
+
+
 class GelbooruSource(BooruSource):
     async def search_posts(self, limit=5, tags="", blacklist_tags="", rating=None):
 
@@ -65,9 +74,7 @@ class GelbooruSource(BooruSource):
                 "q": "index",
                 "pid": page,
             }
-            r = await http.gelbooru_session.get(
-                "https://gelbooru.com/index.php", params=payloadPost
-            )
+            r = await api_get(payloadPost)
             r_json = r.json()
             logger.debug(f"Search Post Status Code: {r.status_code}")
             logger.debug(f"Search Post Raw: {r.text}")
@@ -110,10 +117,8 @@ class GelbooruSource(BooruSource):
                 "s": "tag",
                 "q": "index",
             }
-            r = await http.gelbooru_session.get(
-                "https://gelbooru.com/index.php", params=payloadTags
-            )
-            tag_results = r.json()["tag"]
+            r = await api_get(payloadTags)
+            tag_results = r.json().get("tag", [])
             tag_data.extend(tag_results)
             await asyncio.sleep(RATE_LIMIT)
 
@@ -129,9 +134,7 @@ class GelbooruSource(BooruSource):
             "q": "index",
             "post_id": id,
         }
-        r = await http.gelbooru_session.get(
-            "https://gelbooru.com/index.php", params=payloadNote
-        )
+        r = await api_get(payloadNote)
         root = ET.fromstring(r.text)
         return [
             {
