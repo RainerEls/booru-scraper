@@ -13,10 +13,11 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from app import config, constants, db, http, szurubooru
-from app.sources.base import retry_notice
+from app.sources.base import run_log
 from app.sources.danbooru import DanbooruSource
 from app.sources.e621 import E621Source
 from app.sources.gelbooru import GelbooruSource
+from app.sources.rule34 import Rule34Source
 from app.sources.yandere import YandereSource
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,9 @@ SOURCES = {
     "danbooru": DanbooruSource(),
     "yandere": YandereSource(),
     "e621": E621Source(),
+    "rule34": Rule34Source(),
 }
+FEW_KNOWN_TAGS = 3000
 
 jobs = {}
 
@@ -182,7 +185,15 @@ async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rat
         run = await db.create_run(
             run_id, booru_source, tags, blacklist_tags, rating, limit, "running"
         )
-        retry_notice.set(lambda message: log_and_emit(job, "warning", message, counters))
+        run_log.set(lambda level, message: log_and_emit(job, level, message, counters))
+        if source.slow_tag_lookup and await db.count_tags() < FEW_KNOWN_TAGS:
+            log_and_emit(
+                job,
+                "warning",
+                f"{booru_source} is rate limited and looks up tags one at a time, "
+                "so runs on a fresh instance can take hours until more tags are known.",
+                counters,
+            )
         log_and_emit(job, "info", f"Searching {booru_source}", counters)
         scrape_tags = set()
         unknown_tags = set()

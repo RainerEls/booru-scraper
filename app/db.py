@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy import (
     UniqueConstraint,
     delete,
+    func,
     select,
     update,
 )
@@ -172,6 +173,11 @@ async def tag_exists(tag_name):
         result = (await session.execute(tag_name_exists)).first()
 
     return bool(result is not None)
+
+
+async def count_tags():
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        return await session.scalar(select(func.count()).select_from(Tags))
 
 
 async def store_tag(tag_name, tag_type):

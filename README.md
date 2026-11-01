@@ -13,7 +13,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 - Dedup against your szurubooru instance by MD5 and by source post ID, so re-running a scrape won't create duplicates
 - Automatically pulls in and syncs any tags it doesn't already know about
 - Run history stored in Postgres
-- Pluggable source architecture, with Gelbooru, Danbooru, Yandere and e621 wired up
+- Pluggable source architecture, with Gelbooru, Danbooru, Yandere, e621 and Rule34 wired up
 
 ## Stack
 
@@ -27,7 +27,7 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
    cp .env.example .env
    ```
 
-   You'll need a `SZURUBOORU_BASE_URL`, a `SZURUBOORU_USER_ID`, and a `SZURUBOORU_API_TOKEN` for an account with permission to create posts. You'll also need a `GELBOORU_API_KEY` and `GELBOORU_USER_ID` — Gelbooru's API rejects unauthenticated requests outright, so these aren't optional. `YANDERE_USER_ID` and `YANDERE_PASSWORD_HASH` are optional, as are `DANBOORU_USER_ID`/`DANBOORU_API_KEY` and `E621_USER_ID`/`E621_API_KEY`. Without a paid account, Danbooru allows 2 search tags plus a rating; the blacklist is applied locally and doesn't count.
+   You'll need a `SZURUBOORU_BASE_URL`, a `SZURUBOORU_USER_ID`, and a `SZURUBOORU_API_TOKEN` for an account with permission to create posts. You'll also need a `GELBOORU_API_KEY` and `GELBOORU_USER_ID` — Gelbooru's API rejects unauthenticated requests outright, so these aren't optional. `YANDERE_USER_ID` and `YANDERE_PASSWORD_HASH` are optional, as are `DANBOORU_USER_ID`/`DANBOORU_API_KEY` and `E621_USER_ID`/`E621_API_KEY`. Without a paid account, Danbooru allows 2 search tags plus a rating; the blacklist is applied locally and doesn't count. `RULE34_USER_ID` (the number from the account page, not the username) and `RULE34_API_KEY` are required for Rule34, which allows 60 requests a minute and has to look tags up one at a time, so its first runs are slow.
 
 2. Bring it up:
 

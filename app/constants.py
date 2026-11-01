@@ -29,6 +29,14 @@ E621_TAG_TYPES = {
     8: "general",
 }
 
+RULE34_TAG_TYPES = {
+    0: "general",
+    1: "artist",
+    3: "copyright",
+    4: "character",
+    5: "metadata",
+}
+
 YANDERE_TAG_TYPES = {
     0: "general",
     1: "artist",
@@ -52,6 +60,8 @@ DANBOORU_RATINGS_CONVERSIONS = {"g": "safe", "s": "sketchy", "q": "sketchy", "e"
 
 E621_RATINGS_CONVERSIONS = YANDERE_RATINGS_CONVERSIONS
 
+RULE34_RATINGS_CONVERSIONS = {"safe": "safe", "questionable": "sketchy", "explicit": "unsafe"}
+
 FRONTEND_TO_GELBOORU_RATING_TERMS = {
     "safe": ["rating:general"],
     "sketchy": ["-rating:general", "-rating:explicit"],
@@ -64,3 +74,4 @@ class Source(StrEnum):
     DANBOORU = "danbooru"
     YANDERE = "yandere"
     E621 = "e621"
+    RULE34 = "rule34"
