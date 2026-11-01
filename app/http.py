@@ -14,6 +14,7 @@ SZURUBOORU_RATE_LIMIT = float(config.SZURUBOORU_RATE_LIMIT)
 
 szurubooru_session = None
 gelbooru_session = None
+yandere_session = None
 
 szurubooru_token_auth_str = f"{SZURUBOORU_USER_ID}:{SZURUBOORU_API_TOKEN}".encode()
 szurubooru_token_auth = base64.b64encode(szurubooru_token_auth_str)
@@ -35,7 +36,8 @@ async def create_clients():
         params={"api_key": GELBOORU_API_KEY, "user_id": GELBOORU_USER_ID, "json": 1}
     )
 
-    yandere_session = httpx.AsyncClient()
+    yandere_auth = {"login": config.YANDERE_USER_ID, "password_hash": config.YANDERE_PASSWORD_HASH}
+    yandere_session = httpx.AsyncClient(params=yandere_auth if config.YANDERE_USER_ID else None)
 
     
 

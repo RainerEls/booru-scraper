@@ -13,4 +13,5 @@ os.environ.update(
     GELBOORU_USER_ID="1",
     GELBOORU_RATE_LIMIT="0",
     SZURUBOORU_RATE_LIMIT="0",
+    YANDERE_RATE_LIMIT="0",
 )
