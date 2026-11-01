@@ -2,8 +2,6 @@ import asyncio
 import html
 import logging
 
-import requests
-
 from app import config, constants, http
 from app.sources.base import BooruSource
 
@@ -86,15 +84,3 @@ class YandereSource(BooruSource):
             {**tag, "name": html.unescape(tag["name"])} for tag in tag_data
         ]
         return unescaped_tags
-
-
-# session = requests.session()
-# session.params = {'limit': 1, 'page': 0, 'tags': 'cat'}
-
-# def search_posts():
-#     r = session.get("https://yande.re/post.json")
-#     print(r.text)
-#     print(r.status_code)
-#     # return r.text
-
-# search_posts()

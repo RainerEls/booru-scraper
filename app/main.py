@@ -16,6 +16,7 @@ from app.sources.gelbooru import GelbooruSource
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.getLevelName(config.LOGLEVEL))
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 SOURCES = {"gelbooru": GelbooruSource()}
 
@@ -251,7 +252,7 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
         )
     except Exception as e:
         run_status = "error"
-        logger.exception(f"Scrape failed: {e}")  # noqa: TRY401
+        logger.exception(f"Scrape failed: {e}")
     finally:
         await db.release_claims([db_entry for db_entry, _ in new_posts])
         if failures:

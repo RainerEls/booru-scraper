@@ -48,6 +48,14 @@ uvicorn app.main:app --reload
 
 You'll still need a Postgres instance reachable with the credentials in `.env`.
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+ruff check app tests
+pytest
+```
+
 ## Adding a source
 
 Sources implement `search_posts()` and `grab_tags()` from `app/sources/base.py`. Register a new one in the `SOURCES` dict in `app/main.py` and it'll show up in the UI's source dropdown automatically. You'll also want to add a tag-type map and a rating-conversion map for it in `app/constants.py` — see `GELBOORU_TAG_TYPES`/`GELBOORU_RATINGS_CONVERSIONS` for the pattern.

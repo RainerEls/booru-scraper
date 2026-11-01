@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     UniqueConstraint,
@@ -42,11 +42,11 @@ class Posts(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default=lambda: datetime.now(UTC).replace(tzinfo=None)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
-        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(UTC).replace(tzinfo=None),
     )
     status: Mapped[str] = mapped_column()
     source: Mapped[str] = mapped_column()
@@ -62,11 +62,11 @@ class Tags(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default=lambda: datetime.now(UTC).replace(tzinfo=None)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
-        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(UTC).replace(tzinfo=None),
     )
     tag: Mapped[str] = mapped_column()
     type: Mapped[int] = mapped_column()
@@ -79,7 +79,7 @@ class Runs(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     uuid: Mapped[str] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default=lambda: datetime.now(UTC).replace(tzinfo=None)
     )
     source: Mapped[str] = mapped_column()
     tags: Mapped[str] = mapped_column(nullable=True)
