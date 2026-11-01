@@ -94,15 +94,17 @@ def use_szurubooru(monkeypatch, handler):
     monkeypatch.setattr(http, "szurubooru_session", client)
 
 
+def run_job():
+    job = main.Job()
+    main.jobs["job"] = job
+    return job
+
+
 def scrape(monkeypatch, source, limit=10):
     monkeypatch.setitem(main.SOURCES, "fake", source)
-    queue = asyncio.Queue()
-    main.job_queues["job"] = queue
-    asyncio.run(main.run_scrape("job", queue, limit, "fake", None, None, None))
-    messages = []
-    while not queue.empty():
-        messages.append(queue.get_nowait())
-    return messages
+    job = run_job()
+    asyncio.run(main.run_scrape("job", job, limit, "fake", None, None, None))
+    return job.events
 
 
 def test_rejected_upload_is_retried_next_run(monkeypatch, fake_db):
@@ -197,3 +199,49 @@ def test_search_failure_reaches_the_ui(monkeypatch, fake_db):
 )
 def test_invalid_requests_are_refused(body):
     assert TestClient(main.app).post("/scrape", json=body).status_code in (400, 422)
+
+
+def test_a_reconnecting_client_replays_the_whole_run():
+    job = run_job()
+    job.publish({"processed": 1, "log": "first"})
+    job.finished = True
+    job.publish({"status": "done"})
+
+    with TestClient(main.app).stream("GET", "/scrape/progress/job") as response:
+        lines = [line for line in response.iter_lines() if line.startswith("data")]
+
+    assert len(lines) == 2
+    assert "first" in lines[0]
+    assert "done" in lines[1]
+
+
+def test_a_client_receives_events_published_after_it_connects():
+    async def run():
+        job = main.Job()
+        events = []
+
+        async def listen():
+            async for event in main.scrape_progress(job):
+                events.append(event)
+
+        listener = asyncio.create_task(listen())
+        await asyncio.sleep(0)
+        job.publish({"log": "later"})
+        await asyncio.sleep(0)
+        job.publish({"status": "done"})
+        await asyncio.wait_for(listener, 1)
+        return events
+
+    assert asyncio.run(run()) == [{"log": "later"}, {"status": "done"}]
+
+
+def test_unknown_jobs_are_not_found():
+    assert TestClient(main.app).get("/scrape/progress/missing").status_code == 404
+
+
+def test_only_unfinished_jobs_are_active():
+    job = run_job()
+    client = TestClient(main.app)
+    assert "job" in client.get("/api/scrapes/active").json()
+    job.finished = True
+    assert "job" not in client.get("/api/scrapes/active").json()

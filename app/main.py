@@ -2,10 +2,10 @@ import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import Annotated, Literal
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.sse import EventSourceResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,7 +21,19 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 SOURCES = {"gelbooru": GelbooruSource()}
 
-job_queues = {}
+jobs = {}
+
+
+class Job:
+    def __init__(self):
+        self.events = []
+        self.updated = asyncio.Event()
+        self.finished = False
+
+    def publish(self, event):
+        self.events.append(event)
+        self.updated.set()
+        self.updated = asyncio.Event()
 
 
 @asynccontextmanager
@@ -51,18 +63,21 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 
-def emit(queue, counters, level, message):
-    queue.put_nowait({**counters, "log": message, "level": level})
+def emit(job, counters, level, message):
+    if level == "debug":
+        job.publish({**counters})
+    else:
+        job.publish({**counters, "log": message, "level": level})
 
 
-def bump(queue, counters, field, level, message):
+def bump(job, counters, field, level, message):
     counters[field] += 1
-    emit(queue, counters, level, message)
+    emit(job, counters, level, message)
 
 
-def log_and_queue(queue, level, message, counters):
+def log_and_emit(job, level, message, counters):
     getattr(logger, level)(message)
-    emit(queue, counters, level, message)
+    emit(job, counters, level, message)
 
 
 def response_json(r):
@@ -73,7 +88,7 @@ def response_json(r):
 
 
 async def process_post(
-    booru_source, db_entry, post, semaphore, queue, counters, failures
+    booru_source, db_entry, post, semaphore, job, counters, failures
 ):
     async with semaphore:
         source_id = post["id"]
@@ -95,7 +110,7 @@ async def process_post(
             body = response_json(r)
 
             if r.status_code == 200:
-                bump(queue, counters, "processed", "debug", "post processed")
+                bump(job, counters, "processed", "debug", "post processed")
                 logger.info("Szurubooru post creation succeeded.")
                 await db.add_szurubooru_post_id(db_entry, body["id"])
                 await db.update_post_status(booru_source, source_id, "processed")
@@ -103,7 +118,7 @@ async def process_post(
                 r.status_code == 400 and body.get("name") == "PostAlreadyUploadedError"
             ):
                 bump(
-                    queue,
+                    job,
                     counters,
                     "skipped",
                     "debug",
@@ -121,7 +136,7 @@ async def process_post(
                     }
                 )
                 bump(
-                    queue,
+                    job,
                     counters,
                     "failed",
                     "warning",
@@ -132,7 +147,7 @@ async def process_post(
                 )
         except Exception as e:
             bump(
-                queue,
+                job,
                 counters,
                 "failed",
                 "error",
@@ -141,7 +156,7 @@ async def process_post(
             logger.exception(f"Unhandled exception processing post {source_id}")
 
 
-async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, rating):
+async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rating):
 
     source = SOURCES[booru_source]
     counters = {"processed": 0, "skipped": 0, "failed": 0, "total": 0}
@@ -154,11 +169,13 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
     logger.info(
         f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist Tags: [{blacklist_tags}]"
     )
-    run = await db.create_run(
-        run_id, booru_source, tags, blacklist_tags, rating, limit, "running"
-    )
+    run = None
 
     try:
+        run = await db.create_run(
+            run_id, booru_source, tags, blacklist_tags, rating, limit, "running"
+        )
+        log_and_emit(job, "info", f"Searching {booru_source}", counters)
         scrape_tags = set()
         unknown_tags = set()
 
@@ -166,19 +183,19 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
             tags=tags, blacklist_tags=blacklist_tags, rating=rating
         ):
             counters["total"] += 1
-            log_and_queue(queue, "debug", "Total increased", counters)
+            log_and_emit(job, "debug", "Total increased", counters)
             if await db.post_exists(source=booru_source, source_post_id=result["id"]):
                 counters["skipped"] += 1
-                log_and_queue(
-                    queue,
+                log_and_emit(
+                    job,
                     "debug",
                     f"Gelbooru: {result['id']} already exists in DB. Skipping",
                     counters,
                 )
             elif await db.md5_exists(md5=result["md5"]):
                 counters["skipped"] += 1
-                log_and_queue(
-                    queue,
+                log_and_emit(
+                    job,
                     "debug",
                     f"MD5: {result['md5']} already exists in db. Adding source entry and skipping.",
                     counters,
@@ -200,8 +217,8 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
                 )
                 if db_entry is None:
                     counters["skipped"] += 1
-                    log_and_queue(
-                        queue,
+                    log_and_emit(
+                        job,
                         "debug",
                         f"Gelbooru: {result['id']} is already claimed by another run. Skipping",
                         counters,
@@ -217,13 +234,22 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
         for tag in scrape_tags:
             if not await db.tag_exists(tag):
                 unknown_tags.add(tag)
-        log_and_queue(queue, "info", f"Total unknown tags: {unknown_tags}", counters)
+        log_and_emit(
+            job,
+            "info",
+            f"Found {len(new_posts)} new post(s) with {len(unknown_tags)} unknown tag(s)",
+            counters,
+        )
 
         if unknown_tags:
             logger.info("Grabbing unknown tags")
             new_tags = await source.grab_tags(unknown_tags)
-            for tag in new_tags:
+            for synced, tag in enumerate(new_tags):
                 logger.debug(f"Tag data: {tag}")
+                if synced % 100 == 0:
+                    log_and_emit(
+                        job, "info", f"Syncing tags: {synced}/{len(new_tags)}", counters
+                    )
                 try:
                     await szurubooru.sync_tag(
                         tag_name=tag["name"],
@@ -232,24 +258,25 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
                         ),
                     )
                 except httpx.HTTPError as e:
-                    log_and_queue(
-                        queue, "warning", f"Tag {tag['name']} failed to sync: {e!r}", counters
+                    log_and_emit(
+                        job, "warning", f"Tag {tag['name']} failed to sync: {e!r}", counters
                     )
                 else:
                     await db.store_tag(tag_name=tag["name"], tag_type=tag["type"])
 
+        log_and_emit(job, "info", f"Uploading {len(new_posts)} post(s)", counters)
         semaphore = asyncio.Semaphore(int(config.CONCURRENT_UPLOADS))
         await asyncio.gather(
             *[
                 process_post(
-                    booru_source, db_entry, post, semaphore, queue, counters, failures
+                    booru_source, db_entry, post, semaphore, job, counters, failures
                 )
                 for db_entry, post in new_posts
             ],
             return_exceptions=True,
         )
-        log_and_queue(
-            queue,
+        log_and_emit(
+            job,
             "info",
             f"Total: {counters['total']} - Processed: {counters['processed']} - Skipped: {counters['skipped']} - Failed: {counters['failed']}",
             counters,
@@ -257,37 +284,38 @@ async def run_scrape(run_id, queue, limit, booru_source, tags, blacklist_tags, r
     except Exception as e:
         run_status = "error"
         logger.exception("Scrape failed")
-        emit(queue, counters, "error", f"Scrape failed: {e!r}")
+        emit(job, counters, "error", f"Scrape failed: {e!r}")
     finally:
         await db.release_claims([db_entry for db_entry, _ in new_posts])
         if failures:
-            log_and_queue(
-                queue,
+            log_and_emit(
+                job,
                 "warning",
                 f"{len(failures)} post(s) could not be uploaded and will be retried next run:",
                 counters,
             )
             for failure in failures:
-                log_and_queue(
-                    queue,
+                log_and_emit(
+                    job,
                     "warning",
                     f"  {failure['id']} - {failure['error']}",
                     counters,
                 )
-                log_and_queue(queue, "warning", f"    url:  {failure['url']}", counters)
-                log_and_queue(
-                    queue, "warning", f"    tags: {failure['tags']}", counters
+                log_and_emit(job, "warning", f"    url:  {failure['url']}", counters)
+                log_and_emit(
+                    job, "warning", f"    tags: {failure['tags']}", counters
                 )
-        await db.update_run(
-            run,
-            counters["total"],
-            counters["processed"],
-            counters["skipped"],
-            counters["failed"],
-            run_status,
-        )
-        queue.put_nowait({"status": run_status})
-        del job_queues[run_id]
+        if run is not None:
+            await db.update_run(
+                run,
+                counters["total"],
+                counters["processed"],
+                counters["skipped"],
+                counters["failed"],
+                run_status,
+            )
+        job.finished = True
+        job.publish({"status": run_status})
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -308,28 +336,44 @@ async def history(request: Request):
     )
 
 
+@app.get("/api/scrapes/active")
+async def active_scrapes():
+    return [job_id for job_id, job in jobs.items() if not job.finished]
+
+
+def get_job(job_id):
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Unknown job")
+    return jobs[job_id]
+
+
 @app.get("/scrape/progress/{job_id}", response_class=EventSourceResponse)
-async def scrape_progress(job_id):
-    queue = job_queues[job_id]
+async def scrape_progress(job: Annotated[Job, Depends(get_job)]):
+    sent = 0
     while True:
-        msg = await queue.get()
-        yield msg
-        if msg.get("status") in ("done", "error"):
-            break
+        while sent < len(job.events):
+            event = job.events[sent]
+            sent += 1
+            yield event
+            if "status" in event:
+                return
+        await job.updated.wait()
 
 
 @app.post("/scrape")
 async def scrape(background_tasks: BackgroundTasks, scrape_request: Scrape):
     if scrape_request.source not in SOURCES:
         raise HTTPException(status_code=400, detail=f"Source {scrape_request.source} is not available")
+    for job_id in [job_id for job_id, job in jobs.items() if job.finished]:
+        del jobs[job_id]
     job_id = str(uuid.uuid4())
-    queue = asyncio.Queue()
-    job_queues[job_id] = queue
+    job = Job()
+    jobs[job_id] = job
     scrape_request.rating = scrape_request.rating or None
     background_tasks.add_task(
         run_scrape,
         job_id,
-        queue,
+        job,
         scrape_request.limit,
         scrape_request.source,
         scrape_request.tags,
