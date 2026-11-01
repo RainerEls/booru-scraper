@@ -236,7 +236,7 @@
 
     eventSource.onerror = function() {
       eventSource.close();
-      setFinished('error', 'Connection lost');
+      setFinished('error', 'Offline');
     };
   }
 
@@ -270,7 +270,7 @@
     .catch(err => {
       console.error(err);
       progressSection.classList.remove('hidden');
-      setFinished('error', 'Request failed');
+      setFinished('error', 'Failed');
     });
   });
 </script>
