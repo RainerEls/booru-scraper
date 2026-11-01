@@ -2,12 +2,14 @@ import asyncio
 import html
 import itertools
 import logging
+import math
 import xml.etree.ElementTree as ET
 
 import httpx
 
 from app import config, constants, http
 from app.sources.base import BooruSource, api_get, notes_to_markdown, run_log
+from app.sources.gelbooru import GelbooruSource
 
 logger = logging.getLogger(__name__)
 
@@ -83,18 +85,34 @@ class Rule34Source(BooruSource):
             }
 
     async def grab_tags(self, tags):
-        minutes = round(len(tags) * RATE_LIMIT / 60)
-        run_log.get()("info", f"Looking up {len(tags)} tag(s) one at a time, about {minutes} min")
-        found = []
+        found = await self.tags_known_to_gelbooru(tags)
+        remaining = [tag for tag in tags if tag not in {t["name"] for t in found}]
+        minutes = math.ceil(len(remaining) * RATE_LIMIT / 60)
+        run_log.get()(
+            "info",
+            f"Gelbooru knew {len(found)}/{len(tags)} tag(s), looking up the rest one at a time, about {minutes} min",
+        )
+        looked_up = 0
         try:
-            for done, tag in enumerate(tags):
-                if done and done % 100 == 0:
-                    run_log.get()("info", f"Looked up {done}/{len(tags)} tags")
+            for looked_up, tag in enumerate(remaining):
+                if looked_up and looked_up % 100 == 0:
+                    run_log.get()("info", f"Looked up {looked_up}/{len(remaining)} tags")
                 found.append({"name": tag, "type": await self.tag_type(tag)})
                 await asyncio.sleep(RATE_LIMIT)
         except (RuntimeError, httpx.TransportError) as e:
-            run_log.get()("warning", f"Tag lookup stopped at {len(found)}/{len(tags)}, a later run will finish it: {e!r}")
+            run_log.get()(
+                "warning",
+                f"Tag lookup stopped at {looked_up}/{len(remaining)}, a later run will finish it: {e!r}",
+            )
         return found
+
+    async def tags_known_to_gelbooru(self, tags):
+        try:
+            known = await GelbooruSource().grab_tags(list(tags))
+        except (RuntimeError, httpx.TransportError, ValueError) as e:
+            run_log.get()("warning", f"Could not ask Gelbooru about tags: {e!r}")
+            return []
+        return [{"name": t["name"], "type": t["type"]} for t in known if t["name"] in tags]
 
     async def tag_type(self, tag):
         # Tags are stored escaped, with apostrophes in their numeric form.
