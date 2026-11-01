@@ -121,13 +121,14 @@ async def process_post(
             body = response_json(r)
 
             if r.status_code == 200:
-                bump(job, counters, "processed", "debug", "post processed")
                 logger.info("Szurubooru post creation succeeded.")
                 await db.add_szurubooru_post_id(db_entry, body["id"])
                 await db.update_post_status(booru_source, source_id, "processed")
+                bump(job, counters, "processed", "debug", "post processed")
             elif (
                 r.status_code == 400 and body.get("name") == "PostAlreadyUploadedError"
             ):
+                await db.update_post_status(booru_source, source_id, "skipped")
                 bump(
                     job,
                     counters,
@@ -135,7 +136,6 @@ async def process_post(
                     "debug",
                     "Post already uploaded - Skipping",
                 )
-                await db.update_post_status(booru_source, source_id, "skipped")
             else:
                 error_code = body.get("name", "Unknown")
                 failures.append(

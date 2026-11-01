@@ -32,7 +32,7 @@ async def create_tag(tag_name, tag_category):
 
 
 async def update_tag(tag_name, tag_category, version):
-    payload = {"names": [tag_name], "category": tag_category, "version": version}
+    payload = {"category": tag_category, "version": version}
     r = await http.szurubooru_session.put(f"{BASE_URL}/tag/{quote(tag_name, safe='')}", json=payload)
     return r
 

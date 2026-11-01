@@ -86,7 +86,8 @@ class Rule34Source(BooruSource):
 
     async def grab_tags(self, tags):
         found = await self.tags_known_to_gelbooru(tags)
-        remaining = [tag for tag in tags if tag not in {t["name"] for t in found}]
+        known = {t["name"] for t in found}
+        remaining = [tag for tag in tags if tag not in known]
         minutes = math.ceil(len(remaining) * RATE_LIMIT / 60)
         run_log.get()(
             "info",
