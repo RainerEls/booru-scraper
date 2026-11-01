@@ -13,7 +13,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 - Dedup against your szurubooru instance by MD5 and by source post ID, so re-running a scrape won't create duplicates
 - Automatically pulls in and syncs any tags it doesn't already know about
 - Run history stored in Postgres
-- Pluggable source architecture, with Gelbooru and Yandere wired up
+- Pluggable source architecture, with Gelbooru, Danbooru and Yandere wired up
 
 ## Stack
 
@@ -27,7 +27,7 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
    cp .env.example .env
    ```
 
-   You'll need a `SZURUBOORU_BASE_URL`, a `SZURUBOORU_USER_ID`, and a `SZURUBOORU_API_TOKEN` for an account with permission to create posts. You'll also need a `GELBOORU_API_KEY` and `GELBOORU_USER_ID` — Gelbooru's API rejects unauthenticated requests outright, so these aren't optional. `YANDERE_USER_ID` and `YANDERE_PASSWORD_HASH` are optional.
+   You'll need a `SZURUBOORU_BASE_URL`, a `SZURUBOORU_USER_ID`, and a `SZURUBOORU_API_TOKEN` for an account with permission to create posts. You'll also need a `GELBOORU_API_KEY` and `GELBOORU_USER_ID` — Gelbooru's API rejects unauthenticated requests outright, so these aren't optional. `YANDERE_USER_ID` and `YANDERE_PASSWORD_HASH` are optional, as are `DANBOORU_USER_ID` and `DANBOORU_API_KEY`. Without a paid account, Danbooru allows 2 search tags plus a rating; the blacklist is applied locally and doesn't count.
 
 2. Bring it up:
 
@@ -60,7 +60,7 @@ pytest
 
 Sources implement `search_posts()` and `grab_tags()` from `app/sources/base.py`, and set `ratings` and `tag_types` to their conversion maps from `app/constants.py`. `grab_notes()` is optional. Register a new one in the `SOURCES` dict in `app/main.py` and it'll show up in the UI's source dropdown automatically.
 
-PRs for other sources (Danbooru, Rule34, etc.) are welcome — `Source` in `constants.py` already has a `DANBOORU` entry stubbed in, so that one's a good starting point. Keep rate limiting in mind (see `YANDERE_RATE_LIMIT`/`GELBOORU_RATE_LIMIT` in `app/config.py` for how existing sources configure theirs) and make sure ratings/tag types get mapped onto the `safe`/`sketchy`/`unsafe` and general/artist/copyright/character/metadata conventions the rest of the app expects.
+PRs for other sources (Rule34, etc.) are welcome. Add a `Source` entry in `constants.py` for each one. Keep rate limiting in mind (see `YANDERE_RATE_LIMIT`/`GELBOORU_RATE_LIMIT` in `app/config.py` for how existing sources configure theirs) and make sure ratings/tag types get mapped onto the `safe`/`sketchy`/`unsafe` and general/artist/copyright/character/metadata conventions the rest of the app expects.
 
 ## Recent changes
 

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from app import config, constants, db, http, szurubooru
 from app.sources.base import retry_notice
+from app.sources.danbooru import DanbooruSource
 from app.sources.gelbooru import GelbooruSource
 from app.sources.yandere import YandereSource
 
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.getLevelName(config.LOGLEVEL))
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-SOURCES = {"gelbooru": GelbooruSource(), "yandere": YandereSource()}
+SOURCES = {"gelbooru": GelbooruSource(), "danbooru": DanbooruSource(), "yandere": YandereSource()}
 
 jobs = {}
 
@@ -371,8 +372,6 @@ async def scrape_progress(job: Annotated[Job, Depends(get_job)]):
 
 @app.post("/scrape")
 async def scrape(background_tasks: BackgroundTasks, scrape_request: Scrape):
-    if scrape_request.source not in SOURCES:
-        raise HTTPException(status_code=400, detail=f"Source {scrape_request.source} is not available")
     for job_id in [job_id for job_id, job in jobs.items() if job.finished]:
         del jobs[job_id]
     job_id = str(uuid.uuid4())

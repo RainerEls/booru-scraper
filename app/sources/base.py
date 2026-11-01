@@ -62,6 +62,20 @@ async def api_get(session, url, params):
     return r
 
 
+def notes_to_markdown(notes):
+    return [
+        {
+            "x": note["x"],
+            "y": note["y"],
+            "width": note["width"],
+            "height": note["height"],
+            "body": html_note_to_markdown(note["body"]),
+        }
+        for note in notes
+        if note["is_active"] and note["width"] and note["height"]
+    ]
+
+
 class BooruSource(ABC):
     ratings = {}
     tag_types = {}

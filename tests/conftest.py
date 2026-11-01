@@ -16,6 +16,7 @@ os.environ.update(
     GELBOORU_RATE_LIMIT="0",
     SZURUBOORU_RATE_LIMIT="0",
     YANDERE_RATE_LIMIT="0",
+    DANBOORU_RATE_LIMIT="0",
 )
 
 
