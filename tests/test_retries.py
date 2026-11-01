@@ -27,7 +27,7 @@ def get(responses, notices=None):
 
     async def run():
         if notices is not None:
-            base.retry_notice.set(notices.append)
+            base.run_log.set(lambda level, message: notices.append(message))
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         return await base.api_get(client, "http://source.test/api", {"api_key": "secret-key"})
 

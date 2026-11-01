@@ -17,13 +17,14 @@ gelbooru_session = None
 yandere_session = None
 danbooru_session = None
 e621_session = None
+rule34_session = None
 
 szurubooru_token_auth_str = f"{SZURUBOORU_USER_ID}:{SZURUBOORU_API_TOKEN}".encode()
 szurubooru_token_auth = base64.b64encode(szurubooru_token_auth_str)
 
 
 async def create_clients():
-    global szurubooru_session, gelbooru_session, yandere_session, danbooru_session, e621_session
+    global szurubooru_session, gelbooru_session, yandere_session, danbooru_session, e621_session, rule34_session
 
     szurubooru_session = httpx.AsyncClient(
         headers={
@@ -48,6 +49,10 @@ async def create_clients():
         auth=(config.E621_USER_ID, config.E621_API_KEY) if config.E621_USER_ID else None,
     )
 
+    rule34_session = httpx.AsyncClient(
+        params={"api_key": config.RULE34_API_KEY, "user_id": config.RULE34_USER_ID, "json": 1}
+    )
+
     yandere_auth = {"login": config.YANDERE_USER_ID, "password_hash": config.YANDERE_PASSWORD_HASH}
     yandere_session = httpx.AsyncClient(params=yandere_auth if config.YANDERE_USER_ID else None)
 
@@ -60,3 +65,4 @@ async def close_clients():
     await yandere_session.aclose()
     await danbooru_session.aclose()
     await e621_session.aclose()
+    await rule34_session.aclose()

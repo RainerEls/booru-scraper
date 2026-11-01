@@ -9,7 +9,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 RETRY_DELAYS = (5, 10, 20, 40)
-retry_notice = ContextVar("retry_notice", default=logger.warning)
+run_log = ContextVar("run_log", default=lambda level, message: getattr(logger, level)(message))
 
 _TAG_PAIRS = [
     (r"<b>|<strong>", r"</b>|</strong>", "**"),
@@ -51,7 +51,7 @@ async def api_get(session, url, params):
             problem = f"HTTP {r.status_code}"
             retry_after = r.headers.get("Retry-After", "")
             delay = int(retry_after) if retry_after.isdigit() else delay
-        retry_notice.get()(f"{url} failed with {problem}, retrying in {delay} s")
+        run_log.get()("warning", f"{url} failed with {problem}, retrying in {delay} s")
         await asyncio.sleep(delay)
     else:
         r = await session.get(url, params=params)
@@ -101,6 +101,7 @@ def notes_to_markdown(notes):
 class BooruSource(ABC):
     ratings = {}
     tag_types = {}
+    slow_tag_lookup = False
 
     @abstractmethod
     def search_posts(self, tags="", blacklist_tags="", rating=None):

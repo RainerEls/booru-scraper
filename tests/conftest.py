@@ -18,6 +18,7 @@ os.environ.update(
     YANDERE_RATE_LIMIT="0",
     DANBOORU_RATE_LIMIT="0",
     E621_RATE_LIMIT="0",
+    RULE34_RATE_LIMIT="0",
 )
 
 

@@ -36,6 +36,9 @@ class FakeDb:
             if self.posts.get(id, {}).get("status") == "queued":
                 del self.posts[id]
 
+    async def count_tags(self):
+        return len(self.tags)
+
     async def tag_exists(self, tag_name):
         return tag_name in self.tags
 
@@ -174,6 +177,21 @@ def test_empty_tags_are_not_sent(monkeypatch):
     asyncio.run(szurubooru.upload_post("http://x.test/1.png", " a  b ", "safe", 1, 1))
 
     assert b'"tags":["a","b"]' in bodies[0].replace(b" ", b"")
+
+
+def warnings(messages):
+    return [m["log"] for m in messages if m.get("level") == "warning"]
+
+
+def test_slow_sources_warn_while_few_tags_are_known(monkeypatch, fake_db):
+    class Slow(FakeSource):
+        slow_tag_lookup = True
+
+    assert "fresh instance" in warnings(scrape(monkeypatch, Slow([])))[0]
+
+    fake_db.tags = {str(i) for i in range(main.FEW_KNOWN_TAGS)}
+    assert warnings(scrape(monkeypatch, Slow([]))) == []
+    assert warnings(scrape(monkeypatch, FakeSource([]))) == []
 
 
 def test_search_failure_still_uploads_what_was_found(monkeypatch, fake_db):
