@@ -1,5 +1,15 @@
+import asyncio
+import logging
 import re
 from abc import ABC, abstractmethod
+from contextvars import ContextVar
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+RETRY_DELAYS = (5, 10, 20, 40)
+retry_notice = ContextVar("retry_notice", default=logger.warning)
 
 _TAG_PAIRS = [
     (r"<b>|<strong>", r"</b>|</strong>", "**"),
@@ -30,7 +40,22 @@ def html_note_to_markdown(text):
 
 
 async def api_get(session, url, params):
-    r = await session.get(url, params=params)
+    for delay in RETRY_DELAYS:
+        try:
+            r = await session.get(url, params=params)
+        except httpx.TransportError as e:
+            problem = repr(e)
+        else:
+            if r.status_code != 429 and r.status_code < 500:
+                break
+            problem = f"HTTP {r.status_code}"
+            retry_after = r.headers.get("Retry-After", "")
+            delay = int(retry_after) if retry_after.isdigit() else delay
+        retry_notice.get()(f"{url} failed with {problem}, retrying in {delay} s")
+        await asyncio.sleep(delay)
+    else:
+        r = await session.get(url, params=params)
+
     # Not raise_for_status(): its message includes the query string, and so any credentials.
     if r.is_error:
         raise RuntimeError(f"{url} returned HTTP {r.status_code}")
