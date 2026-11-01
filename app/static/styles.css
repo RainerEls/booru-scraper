@@ -42,7 +42,7 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
 .display { font-family: 'Space Grotesk', system-ui, sans-serif; }
 
 /* ── layout ──────────────────────────────────────────────────── */
-.page-wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+.page-wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
 
 /* ── topbar ──────────────────────────────────────────────────── */
 .topbar {
@@ -52,7 +52,7 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
   padding: 0 20px;
 }
 .topbar-inner {
-  max-width: 860px; margin: 0 auto;
+  max-width: 1100px; margin: 0 auto;
   display: flex; align-items: center; gap: 16px;
   height: 52px;
 }
@@ -95,7 +95,7 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
   border-radius: var(--radius);
   padding: 20px;
 }
-.card--flush { padding: 0; overflow-x: auto; }
+.card--flush { padding: 0; overflow: hidden; }
 .card + .card { margin-top: 12px; }
 
 /* ── form ────────────────────────────────────────────────────── */
