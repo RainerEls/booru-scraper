@@ -58,7 +58,7 @@ pytest
 
 ## Adding a source
 
-Sources implement `search_posts()` and `grab_tags()` from `app/sources/base.py`, and set `ratings` and `tag_types` to their conversion maps from `app/constants.py`. `grab_notes()` is optional. Register a new one in the `SOURCES` dict in `app/main.py` and it'll show up in the UI's source dropdown automatically.
+Sources implement `search_posts()` and `grab_tags()` from `app/sources/base.py`, and set `ratings` and `tag_types` to their conversion maps from `app/constants.py`. `grab_notes()` is optional. Any category named in `tag_types` is created on the booru if it's missing. Register a new one in the `SOURCES` dict in `app/main.py` and it'll show up in the UI's source dropdown automatically.
 
 PRs for other sources (Rule34, etc.) are welcome. Add a `Source` entry in `constants.py` for each one. Keep rate limiting in mind (see `YANDERE_RATE_LIMIT`/`GELBOORU_RATE_LIMIT` in `app/config.py` for how existing sources configure theirs) and make sure ratings/tag types get mapped onto the `safe`/`sketchy`/`unsafe` and general/artist/copyright/character/metadata conventions the rest of the app expects.
 

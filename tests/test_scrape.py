@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -87,8 +88,12 @@ def fake_post(id=1, tags="cat"):
 
 @pytest.fixture
 def fake_db(monkeypatch):
+    async def categories_exist(names):
+        pass
+
     db = FakeDb()
     monkeypatch.setattr(main, "db", db)
+    monkeypatch.setattr(main.szurubooru, "ensure_tag_categories", categories_exist)
     return db
 
 
@@ -276,3 +281,31 @@ def test_only_unfinished_jobs_are_active():
     assert "job" in client.get("/api/scrapes/active").json()
     job.finished = True
     assert "job" not in client.get("/api/scrapes/active").json()
+
+
+def test_only_missing_tag_categories_are_created(monkeypatch):
+    from app import szurubooru
+
+    created = []
+
+    def handler(request):
+        if request.method == "POST":
+            created.append(json.loads(request.content))
+            return httpx.Response(200, json={})
+        return httpx.Response(200, json={"results": [{"name": "default"}, {"name": "general"}]})
+
+    use_szurubooru(monkeypatch, handler)
+    asyncio.run(szurubooru.ensure_tag_categories(["general", "species", "species", "artist"]))
+
+    assert [(c["name"], c["order"]) for c in created] == [("artist", 3), ("species", 4)]
+
+
+def test_a_category_failure_does_not_stop_the_run(monkeypatch, fake_db):
+    async def refused(names):
+        raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(main.szurubooru, "ensure_tag_categories", refused)
+    messages = scrape(monkeypatch, FakeSource([]))
+
+    assert "tag categories" in warnings(messages)[0]
+    assert messages[-1] == {"status": "done"}

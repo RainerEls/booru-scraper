@@ -23,7 +23,7 @@ E621_TAG_TYPES = {
     2: "artist",
     3: "copyright",
     4: "character",
-    5: "general",
+    5: "species",
     6: "general",
     7: "metadata",
     8: "general",

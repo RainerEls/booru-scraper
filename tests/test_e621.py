@@ -90,7 +90,7 @@ def test_tag_groups_map_onto_szurubooru_categories(monkeypatch):
         "cat": "general",
         "an_artist": "artist",
         "a_helper": "artist",
-        "felid": "general",
+        "felid": "species",
         "hi_res": "metadata",
     }
 

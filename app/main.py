@@ -194,6 +194,10 @@ async def run_scrape(run_id, job, limit, booru_source, tags, blacklist_tags, rat
                 "so runs on a fresh instance can take hours until more tags are known.",
                 counters,
             )
+        try:
+            await szurubooru.ensure_tag_categories(source.tag_types.values())
+        except httpx.HTTPError as e:
+            log_and_emit(job, "warning", f"Could not set up tag categories: {e!r}", counters)
         log_and_emit(job, "info", f"Searching {booru_source}", counters)
         scrape_tags = set()
         unknown_tags = set()
