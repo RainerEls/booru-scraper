@@ -3,7 +3,7 @@ import html
 import logging
 
 from app import config, constants, http
-from app.sources.base import BooruSource, api_get, html_note_to_markdown
+from app.sources.base import BooruSource, api_get, notes_to_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -78,14 +78,4 @@ class YandereSource(BooruSource):
             return None
         await asyncio.sleep(RATE_LIMIT)
         r = await api_get(http.yandere_session, f"{API_URL}/note.json", {"post_id": post["id"]})
-        return [
-            {
-                "x": note["x"],
-                "y": note["y"],
-                "width": note["width"],
-                "height": note["height"],
-                "body": html_note_to_markdown(note["body"]),
-            }
-            for note in r.json()
-            if note["is_active"] and note["width"] and note["height"]
-        ]
+        return notes_to_markdown(r.json())

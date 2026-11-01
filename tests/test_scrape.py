@@ -206,13 +206,12 @@ def test_search_failure_reaches_the_ui(monkeypatch, fake_db):
 @pytest.mark.parametrize(
     "body",
     [
-        {"source": "danbooru", "limit": 1},
         {"source": "nope", "limit": 1},
         {"source": "gelbooru", "limit": 0},
     ],
 )
 def test_invalid_requests_are_refused(body):
-    assert TestClient(main.app).post("/scrape", json=body).status_code in (400, 422)
+    assert TestClient(main.app).post("/scrape", json=body).status_code == 422
 
 
 def test_a_reconnecting_client_replays_the_whole_run():

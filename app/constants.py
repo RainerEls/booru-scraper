@@ -9,6 +9,14 @@ GELBOORU_TAG_TYPES = {
     6: "general",
 }
 
+DANBOORU_TAG_TYPES = {
+    0: "general",
+    1: "artist",
+    3: "copyright",
+    4: "character",
+    5: "metadata",
+}
+
 YANDERE_TAG_TYPES = {
     0: "general",
     1: "artist",
@@ -27,6 +35,8 @@ GELBOORU_RATINGS_CONVERSIONS = {
 }
 
 YANDERE_RATINGS_CONVERSIONS = {"s": "safe", "q": "sketchy", "e": "unsafe"}
+
+DANBOORU_RATINGS_CONVERSIONS = {"g": "safe", "s": "sketchy", "q": "sketchy", "e": "unsafe"}
 
 FRONTEND_TO_GELBOORU_RATING_TERMS = {
     "safe": ["rating:general"],
