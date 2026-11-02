@@ -1,7 +1,10 @@
+import asyncio
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, UniqueConstraint, delete, func, select, text, update
+import alembic.command
+import alembic.config
+from sqlalchemy import JSON, UniqueConstraint, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -10,17 +13,13 @@ from app import config
 
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
-engine = create_async_engine(
+DATABASE_URL = (
     f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
 )
+engine = create_async_engine(DATABASE_URL)
 Session = async_sessionmaker(engine, expire_on_commit=False)
 
 CHECK_BUSY = ("running", "repulling")
-
-SCHEMA_UPDATES = (
-    "ALTER TABLE tags DROP COLUMN IF EXISTS type",
-    "CREATE INDEX IF NOT EXISTS ix_posts_md5 ON posts (md5)",
-)
 
 
 def utcnow():
@@ -88,11 +87,8 @@ class IntegrityChecks(Base):
     error: Mapped[str] = mapped_column(nullable=True)
 
 
-async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        for statement in SCHEMA_UPDATES:
-            await conn.execute(text(statement))
+async def migrate():
+    await asyncio.to_thread(alembic.command.upgrade, alembic.config.Config("alembic.ini"), "head")
 
 
 async def close_db():
