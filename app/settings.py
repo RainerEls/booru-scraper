@@ -48,6 +48,11 @@ async def load():
 def check(setting, value):
     if not value:
         return
+    if setting.choices:
+        known = {name for name, _ in setting.choices} | {config.NO_CHOICES}
+        if unknown := set(config.chosen_names(value)) - known:
+            raise Invalid(f"{setting.label} doesn't include {', '.join(sorted(unknown))}.")
+        return
     try:
         number = setting.parse(value)
     except ValueError:
@@ -95,6 +100,14 @@ async def save(values, cleared):
     await load()
 
 
+def chosen_view(setting, value):
+    names = config.chosen_names(value)
+    return [
+        {"name": name, "label": label, "checked": name in names or not names}
+        for name, label in setting.choices
+    ]
+
+
 def view():
     groups = {}
     for setting in config.SETTINGS:
@@ -102,10 +115,11 @@ def view():
         groups.setdefault(setting.group, []).append(
             {
                 "setting": setting,
-                "value": "" if setting.secret else str(value),
+                "value": "" if setting.secret else f"{value:g}" if setting.parse is float else str(value),
                 "is_set": bool(value),
                 "from_env": config.set_by_env(setting.name),
                 "unreadable": setting.name in unreadable,
+                "choices": chosen_view(setting, value) if setting.choices else [],
             }
         )
     return groups

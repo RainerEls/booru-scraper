@@ -4,149 +4,77 @@
 [![tests](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/actions/workflows/tests.yml/badge.svg)](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/actions/workflows/tests.yml) [Open tracker issues](https://gitea.rkahome.work/SleepyShoggoth/homelab-tracker/issues?q=booru-scraper&type=all&state=open) [Pending Renovate PRs](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/pulls?type=all&state=open&q=renovate)
 <!-- BADGES:END -->
 
-A small web app for pulling posts from booru-style image boards and uploading them into a self-hosted [szurubooru](https://github.com/rr-/szurubooru) instance. Kick off a scrape from a browser, watch progress live, and let it handle tag syncing and dedup against what's already in your booru.
+Pull posts from booru-style image boards into your self-hosted [szurubooru](https://github.com/rr-/szurubooru). Start a scrape from your browser, watch it live, and let the app handle tags and duplicates.
+
+![A scrape running, with live progress and saved schedules](docs/images/scrape.png)
 
 ## Features
 
-- Web UI for starting scrape jobs (source, rating, tag/blacklist filters, how many new posts to fetch)
-- Live progress over server-sent events, with a running log and pass/fail counts
-- Dedup against your szurubooru instance by MD5 and by source post ID, so re-running a scrape won't create duplicates. When another source has the same file, its tags and link are added to the existing post
-- Automatically pulls in and syncs any tags it doesn't already know about
-- Run history stored in Postgres, with each run's log and buttons to retry the posts that failed or run the same search again
-- Saved searches that run on a schedule, one at a time. Each picks up what's new and stops after 100 known posts in a row, so it doesn't crawl a whole tag every run
-- A stop button for a running scrape, which keeps the tags synced so far
-- Light and dark themes that follow your system, with a switch in the nav
-- Optional password login
-- Optional notifications through Apprise, with a choice of which events to send
-- A restart saves the log of any running scrape and marks it interrupted
-- A blacklist in Settings that applies to every scrape, on top of the one in the form
-- A Settings page, with keys and tokens encrypted in the database
-- Integrity checks that compare uploaded posts with what's on szurubooru, telling deliberately deleted or merged posts apart from ones that went missing. They only report, with a separate re-pull button for posts that are missing or damaged, which never touches deleted or merged ones
-- Pluggable source architecture, with Gelbooru, Danbooru, Yandere, e621 and Rule34 wired up
+**Scraping**
 
-## Stack
+- Gelbooru, Danbooru, Yandere, e621 and Rule34
+- Filter by rating and tags, with a blacklist per scrape or for every scrape
+- Live progress and logs, with a stop button
+- Danbooru searches past the free account's 2-tag limit
 
-FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-rendered Jinja templates with SSE for the frontend. Runs as two containers via Docker Compose.
+**Your library**
 
-## Setup
+- No duplicates: posts are matched by MD5 and source ID, and the same file from another source adds its tags and link to the existing post
+- New tags are created with the right categories
+- Integrity checks find missing or damaged posts, and tell them apart from ones you deleted or merged
 
-1. Copy the example env file and set the database credentials and a `SETTINGS_KEY`, which encrypts saved keys and tokens (`openssl rand -hex 32` makes one):
+**Running it**
+
+- Saved searches on a schedule, which pick up what's new and stop
+- Run history, with retry and run again
+- Settings page, with keys and tokens encrypted in the database
+- Optional password login and Apprise notifications
+- Light and dark themes
+
+## Quick start
+
+You'll need Docker with Compose, and a szurubooru instance with an account that can create posts.
+
+1. Create your `.env`:
 
    ```bash
    cp .env.example .env
    ```
 
-   Set `TZ` to your timezone, such as `America/Chicago`, to show times in it. Times are stored in UTC either way.
+   Change the database password, and set `SETTINGS_KEY` to the output of `openssl rand -hex 32`.
 
-2. Bring it up:
+2. Choose how to protect the app, also in `.env`. Settings stay read-only until you do:
+
+   - Set `APP_PASSWORD` for a password login, or
+   - Set `ALLOW_SETTINGS_WITHOUT_LOGIN=true` if a [login proxy or a trusted network](docs/login-and-security.md) already protects it
+
+3. Start it:
 
    ```bash
-   docker compose up -d
+   docker compose up -d --build
    ```
 
-   The app will be available at `http://localhost:8192`, and Postgres data persists to a Docker volume.
+4. Open `http://localhost:8192`, go to **Settings**, and enter your szurubooru details and any source keys.
 
-   This pulls the published image. To build your own from the source instead, run `docker compose up -d --build`.
+This builds from source, because the published `0.1.0` image is older than the Settings page and these steps.
 
-3. Set `APP_PASSWORD` in `.env`, or `ALLOW_SETTINGS_WITHOUT_LOGIN=true` if a login proxy or a trusted network already protects the app. Until then the Settings page is read-only. Then enter your Szurubooru and source details there.
+## Screenshots
 
-## Settings
-
-Everything except the database, login and encryption settings can be changed on the Settings page, and takes effect without a restart once any running scrape or check has finished. Any of them can also be set in `.env` under the name shown on the page. A value in `.env` takes priority and can't be changed from the page.
-
-Keys and tokens are encrypted in the database with `SETTINGS_KEY` and are never sent back to the browser. That protects a copy of the database on its own, so keep `.env` private. If the key is lost, the app still starts, and the page asks for those values again. Changing the Szurubooru URL requires entering the token again, so a saved token can't be sent to another server.
-
-## When something's wrong
-
-A run stops straight away, with the reason in its log and a `scrape_failed` notification, when:
-
-- Szurubooru's URL, user or token isn't set, it can't be reached, or it refuses them
-- The source needs a key that isn't set
-- A source or szurubooru refuses the request with HTTP 401 or 403 at any point. Posts not yet uploaded are picked up by a later run
-
-Other errors don't stop the run. If a search fails partway, the posts already found are still uploaded, and a post or tag that fails is reported and tried again by a later run. Rate limits and server errors are retried first.
-
-Yandere ignores bad credentials and answers as if you weren't logged in, so a wrong key there can't be detected. A szurubooru account that can't edit tags or posts gets one warning per run rather than a stopped run, because its uploads can still work. On szurubooru's default settings, a `regular` account can create tags but can't change an existing tag's category.
-
-## Login
-
-Login is optional and off by default, so anyone who can reach the port can use the app until you turn it on. Set `APP_PASSWORD` in `.env` and restart to require a password. Without one, settings stay read-only unless `ALLOW_SETTINGS_WITHOUT_LOGIN=true`, which turns off that protection: use it only with a login proxy and no directly published port, or on a network where you trust everyone. If the password contains a `$`, put it in single quotes.
-
-This is meant for a trusted network. Over plain HTTP, someone able to watch the traffic can read the password, and there's no MFA, so anything reachable from the internet should sit behind HTTPS and a proper auth proxy. If you already have an auth proxy, leave `APP_PASSWORD` empty, set `ALLOW_SETTINGS_WITHOUT_LOGIN=true` and don't publish the app's port.
-
-- Once the app is served over HTTPS, set `COOKIE_SECURE=true`. Leave it off for plain HTTP, or browsers will refuse the login cookie.
-- Sessions last a week and live in memory, so a restart logs everyone out. Changing the password needs a restart, so it does too.
-- Five wrong passwords lock that address out of new logins for five minutes. Behind a proxy, every client can look like the same address.
-- If a proxy sits in front of the app, it has to pass the original `Host` header, or requests that change anything are refused as cross-site.
-- `/health` stays open so monitoring keeps working. It only reports whether the app can reach its database.
-
-## Notifications
-
-Notifications are optional and off until you add a service. In Settings, set `APPRISE_URLS` to one or more [Apprise URLs](https://appriseit.com/services/), separated by commas, such as `ntfys://my-topic,discord://webhook_id/webhook_token`. These URLs often hold tokens, so treat them like any other secret. An existing [Apprise API](https://github.com/caronc/apprise-api) server works too, through `apprise://host/key`.
-
-To send only some notifications, list them in `NOTIFY_ON` in Settings, separated by commas. Leave it empty for all of them.
-
-| Event | Sent when |
+| Activity | Settings |
 | --- | --- |
-| `scrape_finished` | A scrape you started finishes without problems |
-| `schedule_finished` | A scheduled scrape uploads new posts. Runs that find nothing new stay silent |
-| `scrape_failed` | Any scrape hits an error or fails to upload a post |
-| `scrape_interrupted` | A restart cuts a scrape short |
-| `integrity_problems` | An integrity check finds missing or damaged posts, or can't finish |
+| ![Run history and integrity checks](docs/images/activity.png) | ![The Settings page](docs/images/settings-top.png) |
 
-Stopping a scrape yourself sends nothing. A failed notification is logged and never affects the scrape.
+## Documentation
 
-## Health check
-
-`GET /health` answers 200 while the app can reach its database and 503 when it can't. The compose file polls it, so `docker ps` shows the app's health, and monitoring tools can poll it too.
-
-## Upgrading
-
-Pull the new version and restart it. The app brings the database up to date when it starts, including databases from versions older than the migrations, and refuses to start if a migration fails.
-
-To go back to an older version, undo its schema changes first, while the newer version is still installed:
-
-```bash
-docker compose exec booru-scraper alembic history
-docker compose exec booru-scraper alembic downgrade <revision the older version shipped>
-```
-
-Then switch versions. Downgrades keep your data, except for what a column being dropped held.
-
-## Running locally without Docker
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-You'll still need a Postgres instance reachable with the credentials in `.env`.
-
-## Tests
-
-```bash
-pip install -r requirements-dev.txt
-ruff check app tests
-pytest
-```
-
-## Changing the schema
-
-Change the models in `app/db.py`, then generate a migration against a database that's up to date and read what it wrote:
-
-```bash
-alembic revision --autogenerate -m "describe the change"
-```
-
-Autogenerate misses some changes, such as renames, so check it. Write a `downgrade()` too. CI runs every migration up and back down, and fails if the migrations don't match the models.
-
-## Adding a source
-
-Each source is one module in `app/sources/`. It implements `search_posts()` and `grab_tags()` from `base.py` (`grab_notes()` is optional), creates its `session` with `http.client()`, sets `post_page` (the URL of a post, saved as its source), and optionally `credentials` (required values, which grey it out in the UI if missing) and `search_hint` (shown under the Tags field). It also sets three maps: `ratings` (its ratings to `safe`/`sketchy`/`unsafe`), `rating_terms` (the reverse, as search terms) and `tag_categories` (its tag types to szurubooru categories, which are created on the booru if missing). `base.py` has paging helpers for the common API styles.
-
-Register it in `SOURCES` in `app/scrape.py` and it shows up in the UI's source dropdown. Add its credentials and `<NAME>_RATE_LIMIT` to `SETTINGS` in `app/config.py`, which puts them on the Settings page. The module builds its `session` in a `configure()` function, called on import and from `apply_settings()` in `app/scrape.py`, so changes apply without a restart.
+| Guide | Covers |
+| --- | --- |
+| [Configuration](docs/configuration.md) | Every setting, and how secrets are stored |
+| [Sources](docs/sources.md) | What each source needs, its limits, and Danbooru's tag limit |
+| [Login and security](docs/login-and-security.md) | Passwords, proxies and exposing the app |
+| [Notifications](docs/notifications.md) | Apprise setup and events |
+| [Troubleshooting](docs/troubleshooting.md) | Why a run stopped, known quirks, health check |
+| [Upgrading](docs/upgrading.md) | Updating and going back a version |
+| [Development](docs/development.md) | Running locally, tests, migrations, adding a source |
 
 ## Recent changes
 

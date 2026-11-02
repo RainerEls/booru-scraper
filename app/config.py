@@ -26,6 +26,21 @@ class Setting:
     default: str = ""
     parse: type = str
     hint: str = ""
+    choices: tuple = ()
+
+
+NO_CHOICES = "none"
+NOTIFY_EVENTS = (
+    ("scrape_finished", "A scrape you started finishes"),
+    ("schedule_finished", "A scheduled scrape uploads new posts"),
+    ("scrape_failed", "A scrape has problems"),
+    ("scrape_interrupted", "A restart interrupts a scrape"),
+    ("integrity_problems", "An integrity check finds problems"),
+)
+
+
+def chosen_names(value):
+    return value.replace(",", " ").split()
 
 
 def _rate_limit(group, service):
@@ -61,13 +76,7 @@ SETTINGS = (
         secret=True,
         hint="One or more, separated by commas. Leave empty for no notifications.",
     ),
-    Setting(
-        "NOTIFY_ON",
-        "Notifications",
-        "Events to send",
-        hint="scrape_finished, schedule_finished, scrape_failed, scrape_interrupted, integrity_problems. "
-        "Leave empty for all of them.",
-    ),
+    Setting("NOTIFY_ON", "Notifications", "Events to send", choices=NOTIFY_EVENTS),
 )
 SETTINGS_BY_NAME = {setting.name: setting for setting in SETTINGS}
 _SZURUBOORU_REQUIRED = ("SZURUBOORU_BASE_URL", "SZURUBOORU_USER_ID", "SZURUBOORU_API_TOKEN")

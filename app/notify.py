@@ -22,7 +22,7 @@ chosen = set()
 def setup():
     chosen.clear()
     services.clear()
-    names = set(config.NOTIFY_ON.replace(",", " ").split()) or set(EVENTS)
+    names = (set(config.chosen_names(config.NOTIFY_ON)) or set(EVENTS)) - {config.NO_CHOICES}
     chosen.update(names & set(EVENTS))
     if names - set(EVENTS):
         logger.warning(f"Ignoring unknown NOTIFY_ON event(s): {', '.join(sorted(names - set(EVENTS)))}")
