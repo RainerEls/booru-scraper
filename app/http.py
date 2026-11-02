@@ -28,7 +28,7 @@ class SetupProblem(Exception):
 class CredentialsRejected(SetupProblem):
     def __init__(self, url, status=None):
         detail = f" (HTTP {status})" if status else ""
-        super().__init__(f"{httpx.URL(url).host} refused the request{detail}. Check the credentials for it in .env.")
+        super().__init__(f"{httpx.URL(url).host} refused the request{detail}. Check the credentials for it in Settings.")
 
 
 def forbidden(e):
@@ -66,6 +66,7 @@ def client(**options):
 async def close_clients():
     for open_client in _clients:
         await open_client.aclose()
+    _clients.clear()
 
 
 def retry_delay(response, default):

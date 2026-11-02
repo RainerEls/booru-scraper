@@ -208,6 +208,9 @@ select { cursor: pointer; appearance: none;
 .form-actions label { text-transform: none; letter-spacing: 0; font-size: .9375rem; font-weight: 500; }
 .form-actions input[type="number"] { width: 5.5rem; }
 .field-hint { font-size: .875rem; color: var(--text-2); }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 16px; }
+.settings-clear { display: flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.settings-actions { margin-top: 16px; }
 
 /* ── button ──────────────────────────────────────────────────── */
 .btn {

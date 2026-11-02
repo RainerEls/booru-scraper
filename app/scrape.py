@@ -6,9 +6,10 @@ from datetime import timedelta
 
 import httpx
 
-from app import config, db, notify, szurubooru
+from app import config, db, http, notify, szurubooru
 from app.db import utcnow
 from app.http import REJECTED_STATUSES, ApiError, CredentialsRejected, SetupProblem, describe, forbidden, run_log
+from app.sources import danbooru, e621, gelbooru, rule34, yandere
 from app.sources.danbooru import DanbooruSource
 from app.sources.e621 import E621Source
 from app.sources.gelbooru import GelbooruSource
@@ -32,6 +33,13 @@ SOURCES = {
 }
 
 jobs = {}
+
+
+async def apply_settings():
+    await http.close_clients()
+    for module in (szurubooru, gelbooru, danbooru, yandere, e621, rule34):
+        module.configure()
+    notify.setup()
 
 
 class Job:
@@ -314,7 +322,7 @@ async def notify_run(job, spec):
 
 async def check_setup(name, source):
     if not source.configured:
-        raise SetupProblem(f"{name} needs its API key and user id set in .env.")
+        raise SetupProblem(f"{name} needs its API key and user id set in Settings.")
     await szurubooru.check_connection()
 
 

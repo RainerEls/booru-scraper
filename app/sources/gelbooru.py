@@ -12,14 +12,18 @@ from app.sources.base import BooruSource, dapi_pages_by_id, dapi_params, pages_b
 logger = logging.getLogger(__name__)
 
 API_URL = "https://gelbooru.com/index.php"
-RATE_LIMIT = config.rate_limit("GELBOORU")
 PAGE_SIZE = 100
 TAG_BATCH_SIZE = 100
 # Gelbooru refuses offsets past 20,000.
 MAX_OFFSET_PAGES = 201
 SCORE_SORT = re.compile(r"sort:score(:desc|:asc)?")
 
-session = http.client(params={"api_key": config.GELBOORU_API_KEY, "user_id": config.GELBOORU_USER_ID, "json": 1})
+
+def configure():
+    global RATE_LIMIT, session
+    RATE_LIMIT = config.rate_limit("GELBOORU")
+    session = http.client(params={"api_key": config.GELBOORU_API_KEY, "user_id": config.GELBOORU_USER_ID, "json": 1})
+    GelbooruSource.credentials = (config.GELBOORU_API_KEY, config.GELBOORU_USER_ID)
 
 
 async def fetch_page(terms, page=0):
@@ -74,7 +78,6 @@ class GelbooruSource(BooruSource):
         "unsafe": "rating:explicit",
     }
     tag_categories = {0: "general", 1: "artist", 3: "copyright", 4: "character", 5: "metadata", 6: "general"}
-    credentials = (config.GELBOORU_API_KEY, config.GELBOORU_USER_ID)
     search_hint = "Sort with sort:score or sort:updated."
     post_page = "https://gelbooru.com/index.php?page=post&s=view&id={id}"
 
@@ -102,3 +105,6 @@ class GelbooruSource(BooruSource):
         await asyncio.sleep(RATE_LIMIT)
         r = await api_get(session, API_URL, dapi_params("note", post_id=post["id"]))
         return xml_notes(r.text)
+
+
+configure()

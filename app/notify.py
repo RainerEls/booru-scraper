@@ -21,6 +21,7 @@ chosen = set()
 
 def setup():
     chosen.clear()
+    services.clear()
     names = set(config.NOTIFY_ON.replace(",", " ").split()) or set(EVENTS)
     chosen.update(names & set(EVENTS))
     if names - set(EVENTS):

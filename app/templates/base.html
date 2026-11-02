@@ -27,6 +27,7 @@
         {% endmacro %}
         {{ nav_link('/', 'Scrape') }}
         {{ nav_link('/activity', 'Activity') }}
+        {{ nav_link('/settings', 'Settings') }}
         <button type="button" id="theme" class="nav-link nav-button icon theme-toggle"></button>
         {% if logged_in(request) %}
         <form method="post" action="/logout"><button type="submit" class="nav-link nav-button icon icon-logout">Log out</button></form>
@@ -37,7 +38,7 @@
 
   <main class="page-wrap" id="content">
     {% if request.url.path != '/login' and missing_szurubooru() %}
-    <p class="page-alert" role="alert">Szurubooru isn't set up, so nothing can be uploaded. Set {{ missing_szurubooru() | join(', ') }} in <code>.env</code> and restart.</p>
+    <p class="page-alert" role="alert">Szurubooru isn't set up, so nothing can be uploaded. Set {{ missing_szurubooru() | join(', ') }} in <a href="/settings">Settings</a>.</p>
     {% endif %}
     <p class="page-alert hidden" id="page-error" role="alert"></p>
     {% block content %}{% endblock %}

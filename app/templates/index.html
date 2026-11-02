@@ -235,7 +235,7 @@
       const label = source.name.charAt(0).toUpperCase() + source.name.slice(1);
       const option = document.createElement('option');
       option.value = source.name;
-      option.textContent = source.configured ? label : `${label} (needs keys in .env)`;
+      option.textContent = source.configured ? label : `${label} (needs keys in Settings)`;
       option.disabled = !source.configured;
       option.dataset.hint = source.hint;
       sourceSelect.appendChild(option);

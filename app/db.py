@@ -107,6 +107,13 @@ class IntegrityChecks(Base):
     error: Mapped[str] = mapped_column(nullable=True)
 
 
+class SavedSetting(Base):
+    __tablename__ = "settings"
+
+    name: Mapped[str] = mapped_column(primary_key=True)
+    value: Mapped[str] = mapped_column()
+
+
 async def migrate():
     await asyncio.to_thread(alembic.command.upgrade, alembic.config.Config("alembic.ini"), "head")
 
@@ -118,6 +125,20 @@ async def close_db():
 async def ping():
     async with Session() as session:
         await session.execute(text("SELECT 1"))
+
+
+async def get_settings():
+    async with Session() as session:
+        return {row.name: row.value for row in (await session.execute(select(SavedSetting))).scalars()}
+
+
+async def save_settings(changes):
+    async with Session.begin() as session:
+        for name, value in changes.items():
+            if value is None:
+                await session.execute(delete(SavedSetting).where(SavedSetting.name == name))
+            else:
+                await session.merge(SavedSetting(name=name, value=value))
 
 
 async def has_row(table, *conditions):

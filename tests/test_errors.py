@@ -81,9 +81,9 @@ def test_placeholder_values_count_as_unset(monkeypatch):
 
 
 def test_missing_szurubooru_settings_are_named(monkeypatch):
-    monkeypatch.setitem(config._SZURUBOORU_SETTINGS, "SZURUBOORU_API_TOKEN", "")
+    monkeypatch.setattr(config, "SZURUBOORU_API_TOKEN", "")
 
-    with pytest.raises(SetupProblem, match="Set SZURUBOORU_API_TOKEN in .env"):
+    with pytest.raises(SetupProblem, match="Set SZURUBOORU_API_TOKEN in Settings"):
         asyncio.run(szurubooru.check_connection())
 
 
@@ -133,7 +133,7 @@ def test_a_source_without_its_key_stops_before_searching(monkeypatch, fake_db):
 
     assert job.status == "error"
     assert fake_db.runs[1] == "error"
-    assert error_lines(job) == ["Stopped: fake needs its API key and user id set in .env."]
+    assert error_lines(job) == ["Stopped: fake needs its API key and user id set in Settings."]
 
 
 def test_a_bad_szurubooru_token_stops_before_searching(monkeypatch, fake_db):
@@ -210,7 +210,7 @@ def test_a_key_rejected_during_the_search_stops_the_run(monkeypatch, fake_db):
     assert ("fake", 1) not in fake_db.posts
     assert job.status == "error"
     assert error_lines(job) == [
-        "Stopped: source.test refused the request (HTTP 401). Check the credentials for it in .env."
+        "Stopped: source.test refused the request (HTTP 401). Check the credentials for it in Settings."
     ]
 
 
@@ -285,7 +285,7 @@ def test_a_schedule_for_a_source_without_keys_records_why_it_did_not_run(monkeyp
 
 
 def test_integrity_routes_need_szurubooru(monkeypatch):
-    monkeypatch.setitem(config._SZURUBOORU_SETTINGS, "SZURUBOORU_BASE_URL", "")
+    monkeypatch.setattr(config, "SZURUBOORU_BASE_URL", "")
     client = TestClient(main.app)
 
     response = client.post("/api/integrity-checks")

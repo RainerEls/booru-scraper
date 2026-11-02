@@ -16,10 +16,14 @@ from app.sources.gelbooru import GelbooruSource
 logger = logging.getLogger(__name__)
 
 API_URL = "https://api.rule34.xxx/index.php"
-RATE_LIMIT = config.rate_limit("RULE34")
 PAGE_SIZE = 1000
 
-session = http.client(params={"api_key": config.RULE34_API_KEY, "user_id": config.RULE34_USER_ID, "json": 1})
+
+def configure():
+    global RATE_LIMIT, session
+    RATE_LIMIT = config.rate_limit("RULE34")
+    session = http.client(params={"api_key": config.RULE34_API_KEY, "user_id": config.RULE34_USER_ID, "json": 1})
+    Rule34Source.credentials = (config.RULE34_API_KEY, config.RULE34_USER_ID)
 
 
 async def fetch_page(terms, page=0):
@@ -40,7 +44,6 @@ class Rule34Source(BooruSource):
     rating_terms = {"safe": "rating:safe", "sketchy": "rating:questionable", "unsafe": "rating:explicit"}
     tag_categories = GelbooruSource.tag_categories
     slow_tag_lookup = True
-    credentials = (config.RULE34_API_KEY, config.RULE34_USER_ID)
     search_hint = "Sort with sort:score."
     post_page = "https://rule34.xxx/index.php?page=post&s=view&id={id}"
 
@@ -99,3 +102,6 @@ class Rule34Source(BooruSource):
         await asyncio.sleep(RATE_LIMIT)
         r = await api_get(session, API_URL, dapi_params("note", post_id=post["id"]))
         return xml_notes(r.text)
+
+
+configure()

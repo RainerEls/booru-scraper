@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
@@ -16,6 +17,70 @@ def _setting(name):
     return "" if value == name else value
 
 
+@dataclass(frozen=True)
+class Setting:
+    name: str
+    group: str
+    label: str
+    secret: bool = False
+    default: str = ""
+    parse: type = str
+    hint: str = ""
+
+
+def _rate_limit(group, service):
+    return Setting(f"{service}_RATE_LIMIT", group, "Seconds between requests", default="1", parse=float)
+
+
+SETTINGS = (
+    Setting("SZURUBOORU_BASE_URL", "Szurubooru", "API URL", hint="Ends in /api, such as https://booru.example.com/api."),
+    Setting("SZURUBOORU_USER_ID", "Szurubooru", "User"),
+    Setting("SZURUBOORU_API_TOKEN", "Szurubooru", "API token", secret=True),
+    _rate_limit("Szurubooru", "SZURUBOORU"),
+    Setting("CONCURRENT_UPLOADS", "Szurubooru", "Uploads at once", default="5", parse=int),
+    Setting("BLACKLIST_TAGS", "Searching", "Always blacklisted tags", hint="Applies to every scrape."),
+    Setting("GELBOORU_USER_ID", "Gelbooru", "User ID"),
+    Setting("GELBOORU_API_KEY", "Gelbooru", "API key", secret=True, hint="Required to use Gelbooru."),
+    _rate_limit("Gelbooru", "GELBOORU"),
+    Setting("DANBOORU_USER_ID", "Danbooru", "Username"),
+    Setting("DANBOORU_API_KEY", "Danbooru", "API key", secret=True, hint="Optional."),
+    _rate_limit("Danbooru", "DANBOORU"),
+    Setting("E621_USER_ID", "e621", "Username"),
+    Setting("E621_API_KEY", "e621", "API key", secret=True, hint="Optional."),
+    _rate_limit("e621", "E621"),
+    Setting("RULE34_USER_ID", "Rule34", "User ID", hint="The number from the account page, not the username."),
+    Setting("RULE34_API_KEY", "Rule34", "API key", secret=True, hint="Required to use Rule34."),
+    _rate_limit("Rule34", "RULE34"),
+    Setting("YANDERE_USER_ID", "Yandere", "Username"),
+    Setting("YANDERE_PASSWORD_HASH", "Yandere", "Password hash", secret=True, hint="Optional."),
+    _rate_limit("Yandere", "YANDERE"),
+    Setting(
+        "APPRISE_URLS",
+        "Notifications",
+        "Apprise URLs",
+        secret=True,
+        hint="One or more, separated by commas. Leave empty for no notifications.",
+    ),
+    Setting(
+        "NOTIFY_ON",
+        "Notifications",
+        "Events to send",
+        hint="scrape_finished, schedule_finished, scrape_failed, scrape_interrupted, integrity_problems. "
+        "Leave empty for all of them.",
+    ),
+)
+SETTINGS_BY_NAME = {setting.name: setting for setting in SETTINGS}
+_SZURUBOORU_REQUIRED = ("SZURUBOORU_BASE_URL", "SZURUBOORU_USER_ID", "SZURUBOORU_API_TOKEN")
+
+
+def apply(saved):
+    for setting in SETTINGS:
+        value = _setting(setting.name) or saved.get(setting.name) or setting.default
+        globals()[setting.name] = setting.parse(value)
+
+
+apply({})
+
 LOGLEVEL = os.getenv("LOGLEVEL", "INFO")
 
 DB_USER = os.getenv("DB_USER")
@@ -24,38 +89,11 @@ DB_HOST = os.getenv("DB_HOST")
 DB_PORT = os.getenv("DB_PORT")
 DB_NAME = os.getenv("DB_NAME")
 
-SZURUBOORU_BASE_URL = _setting("SZURUBOORU_BASE_URL")
-SZURUBOORU_USER_ID = _setting("SZURUBOORU_USER_ID")
-SZURUBOORU_API_TOKEN = _setting("SZURUBOORU_API_TOKEN")
-CONCURRENT_UPLOADS = int(os.getenv("CONCURRENT_UPLOADS", "5"))
-BLACKLIST_TAGS = os.getenv("BLACKLIST_TAGS", "")
-
 APP_PASSWORD = os.getenv("APP_PASSWORD", "")
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+ALLOW_SETTINGS_WITHOUT_LOGIN = os.getenv("ALLOW_SETTINGS_WITHOUT_LOGIN", "false").lower() == "true"
+SETTINGS_KEY = os.getenv("SETTINGS_KEY", "")
 
-APPRISE_URLS = os.getenv("APPRISE_URLS", "")
-NOTIFY_ON = os.getenv("NOTIFY_ON", "")
-
-GELBOORU_API_KEY = _setting("GELBOORU_API_KEY")
-GELBOORU_USER_ID = _setting("GELBOORU_USER_ID")
-
-DANBOORU_USER_ID = _setting("DANBOORU_USER_ID")
-DANBOORU_API_KEY = _setting("DANBOORU_API_KEY")
-
-E621_USER_ID = _setting("E621_USER_ID")
-E621_API_KEY = _setting("E621_API_KEY")
-
-RULE34_USER_ID = _setting("RULE34_USER_ID")
-RULE34_API_KEY = _setting("RULE34_API_KEY")
-
-YANDERE_USER_ID = _setting("YANDERE_USER_ID")
-YANDERE_PASSWORD_HASH = _setting("YANDERE_PASSWORD_HASH")
-
-_SZURUBOORU_SETTINGS = {
-    "SZURUBOORU_BASE_URL": SZURUBOORU_BASE_URL,
-    "SZURUBOORU_USER_ID": SZURUBOORU_USER_ID,
-    "SZURUBOORU_API_TOKEN": SZURUBOORU_API_TOKEN,
-}
 _REQUIRED = {
     "DB_USER": DB_USER,
     "DB_PASS": DB_PASS,
@@ -65,12 +103,16 @@ _REQUIRED = {
 }
 
 
+def set_by_env(name):
+    return bool(_setting(name))
+
+
 def missing_szurubooru():
-    return [name for name, value in _SZURUBOORU_SETTINGS.items() if not value]
+    return [name for name in _SZURUBOORU_REQUIRED if not globals()[name]]
 
 
 def rate_limit(service):
-    return float(os.getenv(f"{service}_RATE_LIMIT", "1"))
+    return globals()[f"{service}_RATE_LIMIT"]
 
 
 def validate():
