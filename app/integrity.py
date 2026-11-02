@@ -4,7 +4,7 @@ from collections import Counter
 
 import httpx
 
-from app import db, szurubooru
+from app import db, notify, szurubooru
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +78,12 @@ async def run_check(check_id):
     except Exception as e:
         logger.exception("Integrity check failed")
         await db.finish_check(check_id, "error", error=f"Nothing was reported, as the check couldn't finish: {e!r}")
+        await notify.send("integrity_problems", "The check couldn't finish. See Activity for the error.")
     else:
         await db.finish_check(check_id, "done", report=report)
+        counts = report["counts"]
+        if counts["missing"] or counts["damaged"]:
+            await notify.send("integrity_problems", f"{counts['missing']} missing, {counts['damaged']} damaged")
 
 
 async def repull_post(issue, kind, source):
