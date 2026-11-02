@@ -688,13 +688,15 @@ def test_a_failed_merge_is_tried_again_next_run(monkeypatch, fake_db):
     assert any("retried next run" in line["message"] for line in job.lines)
 
 
-def test_a_duplicate_without_an_uploaded_original_stays_unclaimed(monkeypatch, fake_db):
+def test_a_duplicate_with_no_booru_post_on_record_is_uploaded(monkeypatch, fake_db):
     sent = merge_booru(monkeypatch)
 
-    duplicate_scrape(monkeypatch, fake_db, original=None)
+    job = duplicate_scrape(monkeypatch, fake_db, original=None)
 
     assert sent == []
-    assert ("fake", 1) not in fake_db.posts
+    assert fake_db.posts[("fake", 1)]["status"] == "processed"
+    assert job.counters["processed"] == 1
+    assert job.counters["skipped"] == 0
 
 
 def test_a_post_szurubooru_already_has_is_merged_into_that_post(monkeypatch, fake_db):

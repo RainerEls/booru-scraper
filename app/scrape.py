@@ -181,7 +181,7 @@ async def claim_if_new(job, source_name, post, duplicates):
         job.count("skipped", f"{source_name}: {post['id']} is already claimed by another run, skipping")
     elif is_duplicate:
         duplicates.append((db_entry, post))
-        job.count("skipped", f"MD5 {post['md5']} already exists in DB, will merge post {post['id']} into it")
+        job.log("debug", f"MD5 {post['md5']} already exists in DB, will merge post {post['id']} into it")
         return None
     return db_entry
 
@@ -242,30 +242,32 @@ async def sync_unknown_tags(job, source, posts):
         job.advance()
 
 
-async def merge_duplicate(job, source, db_entry, post):
-    booru_post = await db.booru_post_for_md5(post["md5"])
-    if booru_post is None:
-        job.log("info", f"Post {post['id']} has no uploaded original to merge into yet")
-        return
+async def merge_duplicate(job, source, db_entry, post, booru_post):
     try:
         await szurubooru.merge_into_post(booru_post, post["tags"].split(), source.source_links(post))
     except ApiError as e:
         if e.status != 404:
             raise
         await db.finish_post(db_entry, "skipped")
-        job.log("info", f"Post {post['id']} wasn't merged, as booru post {booru_post} no longer exists")
+        job.count("skipped", f"Post {post['id']} wasn't merged, as booru post {booru_post} no longer exists", "info")
     else:
         await db.finish_post(db_entry, "merged")
-        job.log("info", f"Post {post['id']} merged into booru post {booru_post}")
+        job.count("skipped", f"Post {post['id']} merged into booru post {booru_post}", "info")
 
 
 async def merge_duplicates(job, source, duplicates):
     if not duplicates:
         return
     job.start_phase("Merging duplicates", len(duplicates))
+    semaphore = asyncio.Semaphore(1)
     for db_entry, post in duplicates:
+        booru_post = await db.booru_post_for_md5(post["md5"])
+        if booru_post is None:
+            post["notes"] = await source.grab_notes(post)
+            await process_post(source, db_entry, post, semaphore, job)
+            continue
         try:
-            await merge_duplicate(job, source, db_entry, post)
+            await merge_duplicate(job, source, db_entry, post, booru_post)
         except (httpx.HTTPError, CredentialsRejected) as e:
             if forbidden(e):
                 job.warn_once(NO_POST_EDITS)
