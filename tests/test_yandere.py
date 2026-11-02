@@ -1,6 +1,7 @@
 import asyncio
 
 import httpx
+from helpers import collect, mock_client
 
 from app.sources import yandere
 from app.sources.yandere import YandereSource
@@ -11,15 +12,10 @@ def page(posts, tags=None):
 
 
 def use_yandere(monkeypatch, handler):
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), params={"password_hash": "secret"})
-    monkeypatch.setattr(yandere, "session", client)
+    monkeypatch.setattr(yandere, "session", mock_client(handler, params={"password_hash": "secret"}))
 
 
-def collect(source):
-    async def run():
-        return [post async for post in source.search_posts(tags="cat", rating="safe")]
-
-    return asyncio.run(run())
+SEARCH = {"tags": "cat", "rating": "safe"}
 
 
 def test_search_builds_the_query_and_stops_at_a_short_page(monkeypatch):
@@ -30,7 +26,7 @@ def test_search_builds_the_query_and_stops_at_a_short_page(monkeypatch):
         return page([{"id": 1, "tags": "a b&#039;c"}])
 
     use_yandere(monkeypatch, handler)
-    posts = collect(YandereSource())
+    posts = collect(YandereSource(), **SEARCH)
 
     assert posts[0]["tags"] == "a b'c"
     assert len(requests) == 1
@@ -44,7 +40,7 @@ def test_tag_types_come_from_the_search_results(monkeypatch):
         lambda request: page([{"id": 1, "tags": "a"}], {"a_circle": "circle", "an_artist": "artist"}),
     )
     source = YandereSource()
-    collect(source)
+    collect(source, **SEARCH)
 
     tags = asyncio.run(source.grab_tags(["a_circle", "an_artist", "unseen"]))
 

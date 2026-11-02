@@ -2,6 +2,7 @@ import asyncio
 
 import httpx
 import pytest
+from helpers import collect, mock_client
 
 from app.sources import gelbooru, rule34
 from app.sources.rule34 import PAGE_SIZE, Rule34Source
@@ -20,14 +21,7 @@ def post(id, rating="questionable", **fields):
 
 
 def use_rule34(monkeypatch, handler):
-    monkeypatch.setattr(rule34, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
-
-
-def collect(**search):
-    async def run():
-        return [post async for post in Rule34Source().search_posts(**search)]
-
-    return asyncio.run(run())
+    monkeypatch.setattr(rule34, "session", mock_client(handler))
 
 
 def test_search_pages_by_id_and_normalises_posts(monkeypatch):
@@ -39,7 +33,7 @@ def test_search_pages_by_id_and_normalises_posts(monkeypatch):
         return httpx.Response(200, json=[post(5000 - i) for i in range(count)])
 
     use_rule34(monkeypatch, handler)
-    posts = collect(tags="cat", blacklist_tags="dog", rating="sketchy")
+    posts = collect(Rule34Source(), tags="cat", blacklist_tags="dog", rating="sketchy")
 
     assert requests[0]["tags"] == "-dog cat rating:questionable"
     assert requests[1]["tags"] == f"-dog cat rating:questionable id:<{5001 - PAGE_SIZE}"
@@ -56,7 +50,7 @@ def test_sorted_searches_page_by_offset(monkeypatch):
         return httpx.Response(200, json=[post(i) for i in range(count)])
 
     use_rule34(monkeypatch, handler)
-    collect(tags="cat sort:score")
+    collect(Rule34Source(), tags="cat sort:score")
 
     assert [r["pid"] for r in requests] == ["0", "1"]
     assert {r["tags"] for r in requests} == {"cat sort:score"}
@@ -65,21 +59,21 @@ def test_sorted_searches_page_by_offset(monkeypatch):
 def test_no_matches_is_an_empty_body(monkeypatch):
     use_rule34(monkeypatch, lambda request: httpx.Response(200, text=""))
 
-    assert collect(tags="nothing") == []
+    assert collect(Rule34Source(), tags="nothing") == []
 
 
 def test_a_refused_request_explains_itself(monkeypatch):
     use_rule34(monkeypatch, lambda request: httpx.Response(200, json="Missing authentication."))
 
     with pytest.raises(RuntimeError, match="Missing authentication"):
-        collect(tags="cat")
+        collect(Rule34Source(), tags="cat")
 
 
 def test_ratings_are_normalised_and_mismatches_dropped(monkeypatch):
     posts = [post(1), post(2, rating="Questionable"), post(3, rating="Explicit")]
     use_rule34(monkeypatch, lambda request: httpx.Response(200, json=posts))
 
-    results = collect(rating="sketchy")
+    results = collect(Rule34Source(), rating="sketchy")
 
     assert [p["id"] for p in results] == [1, 2]
     assert results[1]["rating"] == "questionable"
@@ -89,7 +83,7 @@ def gelbooru_knows(monkeypatch, tags):
     def handler(request):
         return httpx.Response(200, json={"tag": tags})
 
-    monkeypatch.setattr(gelbooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(gelbooru, "session", mock_client(handler))
 
 
 def test_tags_gelbooru_knows_are_not_looked_up_on_rule34(monkeypatch):
@@ -109,7 +103,7 @@ def test_tags_gelbooru_knows_are_not_looked_up_on_rule34(monkeypatch):
 
 def test_a_gelbooru_failure_falls_back_to_rule34(monkeypatch):
     monkeypatch.setattr(
-        gelbooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(401)))
+        gelbooru, "session", mock_client(lambda request: httpx.Response(401))
     )
     use_rule34(monkeypatch, lambda request: httpx.Response(200, text='<tags><tag type="1"/></tags>'))
 

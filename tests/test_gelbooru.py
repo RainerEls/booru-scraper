@@ -3,6 +3,7 @@ import logging
 
 import httpx
 import pytest
+from helpers import collect, mock_client
 
 from app.http import ApiError
 from app.sources import gelbooru
@@ -15,16 +16,7 @@ def post(id):
 
 
 def gelbooru_client(handler):
-    return httpx.AsyncClient(transport=httpx.MockTransport(handler), params={"api_key": "secret-key"})
-
-
-async def collect(posts, count):
-    results = []
-    async for post in posts:
-        results.append(post)
-        if len(results) == count:
-            break
-    return results
+    return mock_client(handler, params={"api_key": "secret-key"})
 
 
 def gelbooru_with_posts(count, requests):
@@ -48,7 +40,7 @@ def test_search_fetches_only_the_pages_consumed(monkeypatch):
     requests = []
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(gelbooru_with_posts(250, requests)))
 
-    results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat"), 150))
+    results = collect(GelbooruSource(), 150, tags="cat")
 
     assert requests == ["cat", "cat id:<151"]
     assert [p["id"] for p in results] == list(range(250, 100, -1))
@@ -59,7 +51,7 @@ def test_search_continues_past_the_offset_cap(monkeypatch):
     requests = []
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(gelbooru_with_posts(25_050, requests)))
 
-    results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat"), 100_000))
+    results = collect(GelbooruSource(), 100_000, tags="cat")
 
     assert [p["id"] for p in results] == list(range(25_050, 0, -1))
 
@@ -68,7 +60,7 @@ def test_other_sorts_page_by_offset_up_to_the_cap(monkeypatch):
     requests = []
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(gelbooru_with_posts(25_050, requests)))
 
-    results = asyncio.run(collect(GelbooruSource().search_posts(tags="cat sort:updated"), 100_000))
+    results = collect(GelbooruSource(), 100_000, tags="cat sort:updated")
 
     assert len(results) == 20_100
     assert set(requests) == {"cat sort:updated"}
@@ -116,7 +108,7 @@ def test_score_sort_reaches_every_post_once(monkeypatch, sort_term, ordering):
     monkeypatch.setattr(gelbooru, "MAX_OFFSET_PAGES", 3)
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(gelbooru_with_scores(scores)))
 
-    results = asyncio.run(collect(GelbooruSource().search_posts(tags=sort_term), 100_000))
+    results = collect(GelbooruSource(), 100_000, tags=sort_term)
 
     assert sorted(p["id"] for p in results) == list(range(1, len(scores) + 1))
     assert [p["score"] for p in results] == sorted(scores, key=lambda score: ordering * score)
@@ -134,7 +126,7 @@ def test_ratings_map_onto_gelbooru_terms(monkeypatch, rating, terms):
     requests = []
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(gelbooru_with_posts(1, requests)))
 
-    asyncio.run(collect(GelbooruSource().search_posts(tags="cat", rating=rating), 1))
+    collect(GelbooruSource(), 1, tags="cat", rating=rating)
 
     assert requests == [f"cat {terms}"]
 
@@ -151,7 +143,7 @@ def test_requests_do_not_log_the_api_key(monkeypatch, caplog):
 
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     with caplog.at_level(logging.INFO):
-        asyncio.run(collect(GelbooruSource().search_posts(), 1))
+        collect(GelbooruSource(), 1)
 
     assert "secret-key" not in caplog.text
 
@@ -170,7 +162,7 @@ def test_http_errors_do_not_expose_the_api_key(monkeypatch):
 
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     with pytest.raises(ApiError) as e:
-        asyncio.run(collect(GelbooruSource().search_posts(), 1))
+        collect(GelbooruSource(), 1)
 
     assert "429" in str(e.value)
     assert "secret-key" not in str(e.value)
@@ -184,7 +176,7 @@ def test_search_stops_after_a_short_page(monkeypatch):
         return httpx.Response(200, json={"post": [post(1)]})
 
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
-    assert len(asyncio.run(collect(GelbooruSource().search_posts(), 100))) == 1
+    assert len(collect(GelbooruSource(), 100)) == 1
     assert pages == ["0"]
 
 

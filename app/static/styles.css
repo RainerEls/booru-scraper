@@ -78,7 +78,7 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
 /* ── section headers ─────────────────────────────────────────── */
 .section-head {
   display: flex; align-items: center; gap: 10px;
-  margin: 22px 0 12px;
+  margin: 28px 0 12px;
 }
 .section-head h2 {
   font-family: 'Space Grotesk', sans-serif;
@@ -95,7 +95,7 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
   border-radius: var(--radius);
   padding: 20px;
 }
-.card--flush { padding: 0; overflow: hidden; }
+.card--flush { padding: 0; overflow-x: auto; }
 .card + .card { margin-top: 12px; }
 
 /* ── form ────────────────────────────────────────────────────── */
@@ -233,7 +233,6 @@ select { cursor: pointer; appearance: none;
 .log-line--error   { color: var(--red); }
 .log-line--warning { color: var(--amber); }
 .log-line--info    { color: var(--text-2); }
-.log-line--debug   { color: var(--text-3); }
 
 /* ── status badge ────────────────────────────────────────────── */
 .status-badge {
@@ -254,19 +253,13 @@ select { cursor: pointer; appearance: none;
   color: var(--green); background: var(--green-dim);
   border-color: #14532d;
 }
-.status-badge--error,
-.status-badge--failed {
+.status-badge--error {
   color: var(--red); background: var(--red-dim);
   border-color: #7f1d1d;
 }
 .status-badge--skipped {
   color: var(--amber); background: var(--amber-dim);
   border-color: #78350f;
-}
-.status-badge--queued,
-.status-badge--processed {
-  color: var(--text-2); background: transparent;
-  border-color: var(--border);
 }
 
 /* ── history table ───────────────────────────────────────────── */
@@ -298,7 +291,7 @@ select { cursor: pointer; appearance: none;
 .history-table td.green { color: var(--green); }
 .history-table td.amber { color: var(--amber); }
 .history-table td.red   { color: var(--red); }
-.time-cell { color: var(--text-3); font-size: 12px; }
+.time-cell { color: var(--text-3); font-size: 12px; white-space: nowrap; }
 .tags-cell {
   min-width: 140px; max-width: 220px;
   white-space: normal; word-break: break-word;
@@ -309,17 +302,16 @@ select { cursor: pointer; appearance: none;
   white-space: normal; word-break: break-word;
   color: var(--red); opacity: .8; line-height: 1.6;
 }
-.card--flush { overflow-x: auto; }
 
 /* ── empty state ─────────────────────────────────────────────── */
 .empty-state {
   text-align: center; padding: 40px 20px;
   color: var(--text-2); font-size: 13px;
 }
+
 /* ── integrity checks ────────────────────────────────────────── */
 .section-note { color: var(--text-3); font-size: 13px; margin-bottom: 12px; }
 .check-detail { font-size: 13px; }
 .check-issues { list-style: none; margin-top: 8px; overflow-wrap: anywhere; }
 .check-issues li { padding: 4px 0; }
-.time-cell { white-space: nowrap; }
 .check-repull { margin-left: 6px; color: var(--text-2); font-weight: 500; }
