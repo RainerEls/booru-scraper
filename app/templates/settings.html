@@ -14,6 +14,19 @@
   <div class="card settings-grid">
     {% for field in fields %}
     {% set setting = field.setting %}
+    {% set locked = field.from_env or not editable %}
+    {% if field.choices %}
+    <fieldset class="form-group settings-choices" data-setting="{{ setting.name }}">
+      <legend>{{ setting.label }}</legend>
+      {% for choice in field.choices %}
+      <label class="settings-clear"><input type="checkbox" value="{{ choice.name }}" {% if choice.checked %}checked{% endif %} {% if locked %}disabled{% endif %}> {{ choice.label }}</label>
+      {% endfor %}
+      <span class="field-hint">
+        <code class="setting-name">{{ setting.name }}</code>
+        {% if field.from_env %}Set in <code>.env</code>, which takes priority.{% endif %}
+      </span>
+    </fieldset>
+    {% else %}
     <div class="form-group">
       <label for="{{ setting.name }}">{{ setting.label }}</label>
       <input
@@ -23,7 +36,7 @@
         value="{{ field.value }}"
         autocomplete="{{ 'new-password' if setting.secret else 'off' }}"
         {% if setting.secret %}data-secret{% if field.is_set %} placeholder="Saved. Type to replace it."{% endif %}{% endif %}
-        {% if field.from_env or not editable or (setting.secret and not has_key) %}disabled{% endif %}
+        {% if locked or (setting.secret and not has_key) %}disabled{% endif %}
       >
       <span class="field-hint">
         <code class="setting-name">{{ setting.name }}</code>
@@ -35,6 +48,7 @@
       <label class="settings-clear"><input type="checkbox" data-clear="{{ setting.name }}"> Remove saved value</label>
       {% endif %}
     </div>
+    {% endif %}
     {% endfor %}
   </div>
   {% endfor %}
@@ -50,12 +64,27 @@
 {% block scripts %}
 <script>
   const form = document.getElementById('settings-form');
+  const choiceGroups = [...form.querySelectorAll('[data-setting]')];
+
+  function chosenValue(group) {
+    const boxes = [...group.querySelectorAll('input')];
+    const checked = boxes.filter(box => box.checked).map(box => box.value);
+    if (checked.length === boxes.length) return '';
+    return checked.join(',') || 'none';
+  }
+
+  const savedChoices = new Map(choiceGroups.map(group => [group, chosenValue(group)]));
+
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const inputs = [...form.querySelectorAll('input[name]:not(:disabled)')];
     const changed = inputs.filter(input => input.value !== input.defaultValue);
+    const changedChoices = choiceGroups.filter(group => chosenValue(group) !== savedChoices.get(group));
     const body = {
-      values: Object.fromEntries(changed.map(input => [input.name, input.value])),
+      values: Object.fromEntries([
+        ...changed.map(input => [input.name, input.value]),
+        ...changedChoices.map(group => [group.dataset.setting, chosenValue(group)]),
+      ]),
       cleared: [...form.querySelectorAll('[data-clear]:checked')].map(box => box.dataset.clear),
     };
     const res = await apiCall('/api/settings', {

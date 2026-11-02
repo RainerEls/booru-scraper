@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, db, main, scrape, settings
+from app import config, db, main, notify, scrape, settings
 from app.sources import danbooru, rule34
 
 KEY_NAME = "RULE34_API_KEY"
@@ -38,6 +38,7 @@ def saved(monkeypatch):
     config.apply({})
     for module in (danbooru, rule34):
         module.configure()
+    notify.setup()
 
 
 @pytest.fixture
@@ -177,6 +178,39 @@ def test_secrets_can_be_removed(saved, client):
 
     assert KEY_NAME not in saved
     assert config.RULE34_API_KEY == ""
+
+
+def test_event_choices_match_the_notifications_sent():
+    assert {name for name, _ in config.NOTIFY_EVENTS} == set(notify.EVENTS)
+
+
+@pytest.mark.parametrize(
+    "value, checked",
+    [("", 5), ("scrape_failed,integrity_problems", 2), ("none", 0)],
+)
+def test_event_checkboxes_show_what_is_saved(client, value, checked):
+    assert save(client, {"NOTIFY_ON": value}).status_code == 204
+
+    fieldset = client.get("/settings").text.split('data-setting="NOTIFY_ON"')[1].split("</fieldset>")[0]
+
+    assert fieldset.count("checked") == checked
+
+
+def test_unchecking_every_event_sends_none(client):
+    assert save(client, {"NOTIFY_ON": "none"}).status_code == 204
+
+    assert notify.chosen == set()
+
+
+def test_all_events_are_sent_by_default(client):
+    assert save(client, {"NOTIFY_ON": ""}).status_code == 204
+
+    assert notify.chosen == set(notify.EVENTS)
+
+
+def test_unknown_events_are_refused(saved, client):
+    assert save(client, {"NOTIFY_ON": "scrape_failed,not_an_event"}).status_code == 422
+    assert saved == {}
 
 
 def test_saving_waits_for_running_work(saved, client, monkeypatch):

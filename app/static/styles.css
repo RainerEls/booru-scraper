@@ -212,6 +212,12 @@ select { cursor: pointer; appearance: none;
 .setting-name { display: block; }
 .settings-clear { display: flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; font-weight: 500; }
 .settings-actions { margin-top: 16px; }
+.settings-choices { border: 0; padding: 0; margin: 0; min-width: 0; }
+.settings-choices legend {
+  padding: 0; margin-bottom: 6px;
+  font-size: .8125rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-2);
+}
 
 /* ── button ──────────────────────────────────────────────────── */
 .btn {
