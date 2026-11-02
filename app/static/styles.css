@@ -68,7 +68,6 @@ button, select, input, textarea { font-family: inherit; font-size: .9375rem; }
 
 /* ── icons ──────────────────────────────────────────────────── */
 .icon::before,
-.status-badge::before,
 .log-line--warning::before,
 .log-line--error::before {
   content: '';
@@ -316,32 +315,27 @@ select { cursor: pointer; appearance: none;
   font-family: 'Space Grotesk', sans-serif;
   font-size: .8125rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .08em;
-  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-  box-sizing: border-box;
+  display: inline-block; box-sizing: border-box;
   min-width: 7.5rem; padding: 3px 8px;
-  white-space: nowrap;
+  text-align: center; text-indent: .08em; white-space: nowrap;
   border-radius: 99px;
   border: 1px solid;
 }
 .status-badge--running {
-  --icon: url('icons/loader-circle.svg');
   color: var(--accent); background: var(--accent-dim);
   border-color: var(--border-hi);
 }
 .status-badge--done {
-  --icon: url('icons/check.svg');
   color: var(--green); background: var(--green-dim);
   border-color: var(--green-edge);
 }
 .status-badge--error {
-  --icon: url('icons/circle-x.svg');
   color: var(--red); background: var(--red-dim);
   border-color: var(--red-edge);
 }
 .status-badge--stopped,
 .status-badge--interrupted,
 .status-badge--skipped {
-  --icon: url('icons/circle-alert.svg');
   color: var(--amber); background: var(--amber-dim);
   border-color: var(--amber-edge);
 }
