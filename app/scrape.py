@@ -8,7 +8,7 @@ import httpx
 
 from app import config, db, notify, szurubooru
 from app.db import utcnow
-from app.http import REJECTED_STATUSES, CredentialsRejected, SetupProblem, describe, run_log
+from app.http import REJECTED_STATUSES, ApiError, CredentialsRejected, SetupProblem, describe, forbidden, run_log
 from app.sources.danbooru import DanbooruSource
 from app.sources.e621 import E621Source
 from app.sources.gelbooru import GelbooruSource
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 FEW_KNOWN_TAGS = 3000
 SCHEDULE_CHECK_SECONDS = 60
 SCHEDULED_STOP_AFTER_KNOWN = 100
+NO_POST_EDITS = "The szurubooru account can't edit posts, so duplicates won't be merged."
 PERMANENT_UPLOAD_ERRORS = ("DownloadTooLargeError", "InvalidPostContentError")
 
 SOURCES = {
@@ -43,6 +44,7 @@ class Job:
         self.progress = {"phase": "Starting", "done": 0, "goal": 0}
         self.failures = []
         self.lines = []
+        self.warned = set()
         self.task = None
         self.stop_status = None
 
@@ -73,6 +75,11 @@ class Job:
     def count(self, field, message, level="debug"):
         self.counters[field] += 1
         self.log(level, message)
+
+    def warn_once(self, message):
+        if message not in self.warned:
+            self.warned.add(message)
+            self.log("warning", message)
 
     def error(self, message):
         self.status = "error"
@@ -114,6 +121,20 @@ def response_json(r):
         return {}
 
 
+async def merge_uploaded_post(job, source, db_entry, post, other_post):
+    try:
+        await szurubooru.merge_into_post(other_post, post["tags"].split(), source.source_links(post))
+    except (httpx.HTTPError, CredentialsRejected) as e:
+        if not forbidden(e):
+            raise
+        job.warn_once(NO_POST_EDITS)
+        await db.finish_post(db_entry, "skipped")
+        job.count("skipped", f"Post {post['id']} already uploaded as booru post {other_post}")
+    else:
+        await db.finish_post(db_entry, "merged")
+        job.count("skipped", f"Post {post['id']} already uploaded, merged into booru post {other_post}")
+
+
 async def process_post(source, db_entry, post, semaphore, job):
     async with semaphore:
         try:
@@ -126,10 +147,7 @@ async def process_post(source, db_entry, post, semaphore, job):
                 await db.finish_post(db_entry, "processed", body["id"])
                 job.count("processed", f"Post {post['id']} uploaded")
             elif r.status_code == 400 and body.get("name") == "PostAlreadyUploadedError":
-                other_post = body["otherPostId"]
-                await szurubooru.merge_into_post(other_post, post["tags"].split(), source.source_links(post))
-                await db.finish_post(db_entry, "merged")
-                job.count("skipped", f"Post {post['id']} already uploaded, merged into booru post {other_post}")
+                await merge_uploaded_post(job, source, db_entry, post, body["otherPostId"])
             else:
                 error_code = body.get("name", "Unknown")
                 if error_code in PERMANENT_UPLOAD_ERRORS:
@@ -211,7 +229,14 @@ async def sync_unknown_tags(job, source, posts):
         try:
             await szurubooru.sync_tag(tag["name"], tag["category"])
         except httpx.HTTPError as e:
-            job.log("warning", f"Tag {tag['name']} failed to sync: {describe(e)}")
+            if not forbidden(e):
+                job.log("warning", f"Tag {tag['name']} failed to sync: {describe(e)}")
+            elif e.request.method == "PUT":
+                job.warn_once("The szurubooru account can't edit tags, so existing tags keep their category.")
+                await db.store_tag(tag["name"])
+            else:
+                job.log("warning", "The szurubooru account can't read or create tags, so no tags will be written.")
+                break
         else:
             await db.store_tag(tag["name"])
         job.advance()
@@ -224,8 +249,11 @@ async def merge_duplicate(job, source, db_entry, post):
         return
     try:
         await szurubooru.merge_into_post(booru_post, post["tags"].split(), source.source_links(post))
-    except httpx.HTTPError as e:
-        job.log("warning", f"Post {post['id']} could not be merged into booru post {booru_post}, retried next run: {describe(e)}")
+    except ApiError as e:
+        if e.status != 404:
+            raise
+        await db.finish_post(db_entry, "skipped")
+        job.log("info", f"Post {post['id']} wasn't merged, as booru post {booru_post} no longer exists")
     else:
         await db.finish_post(db_entry, "merged")
         job.log("info", f"Post {post['id']} merged into booru post {booru_post}")
@@ -236,7 +264,13 @@ async def merge_duplicates(job, source, duplicates):
         return
     job.start_phase("Merging duplicates", len(duplicates))
     for db_entry, post in duplicates:
-        await merge_duplicate(job, source, db_entry, post)
+        try:
+            await merge_duplicate(job, source, db_entry, post)
+        except (httpx.HTTPError, CredentialsRejected) as e:
+            if forbidden(e):
+                job.warn_once(NO_POST_EDITS)
+                return
+            job.log("warning", f"Post {post['id']} could not be merged, retried next run: {describe(e)}")
         job.advance()
 
 
@@ -322,8 +356,11 @@ async def run_scrape(run_id, job, spec):
             )
         try:
             await szurubooru.ensure_tag_categories(source.tag_categories.values())
-        except httpx.HTTPError as e:
-            job.log("warning", f"Could not set up tag categories: {describe(e)}")
+        except (httpx.HTTPError, CredentialsRejected) as e:
+            if forbidden(e):
+                job.log("warning", "The szurubooru account can't manage tag categories, so missing ones won't be created.")
+            else:
+                job.log("warning", f"Could not set up tag categories: {describe(e)}")
 
         job.log("info", f"Searching {spec.source}")
         await find_new_posts(job, spec, new_posts, duplicates)

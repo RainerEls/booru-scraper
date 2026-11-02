@@ -31,6 +31,12 @@ class CredentialsRejected(SetupProblem):
         super().__init__(f"{httpx.URL(url).host} refused the request{detail}. Check the credentials for it in .env.")
 
 
+def forbidden(e):
+    if isinstance(e, httpx.HTTPStatusError):
+        return e.response.status_code in REJECTED_STATUSES
+    return isinstance(e, CredentialsRejected)
+
+
 def describe(e):
     if isinstance(e, ApiError):
         host, status = e.host, e.status

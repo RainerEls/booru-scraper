@@ -57,7 +57,7 @@ A run stops straight away, with the reason in its log and a `scrape_failed` noti
 
 Other errors don't stop the run. If a search fails partway, the posts already found are still uploaded, and a post or tag that fails is reported and tried again by a later run. Rate limits and server errors are retried first.
 
-Yandere ignores bad credentials and answers as if you weren't logged in, so a wrong key there can't be detected. A szurubooru account without permission to edit tags gets a warning for each tag rather than a stopped run, because its uploads can still work.
+Yandere ignores bad credentials and answers as if you weren't logged in, so a wrong key there can't be detected. A szurubooru account that can't edit tags or posts gets one warning per run rather than a stopped run, because its uploads can still work. On szurubooru's default settings, a `regular` account can create tags but can't change an existing tag's category.
 
 ## Login
 
