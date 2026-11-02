@@ -124,6 +124,28 @@ def test_rejected_upload_is_retried_next_run(monkeypatch, fake_db):
     assert fake_db.posts[("fake", 1)]["status"] == "processed"
 
 
+def test_a_post_szurubooru_can_never_take_stops_blocking_its_search(monkeypatch, fake_db):
+    uploaded = []
+
+    def handler(request):
+        url = json.loads(request.content)["contentUrl"]
+        if url.endswith("/1.png"):
+            return httpx.Response(400, json={"name": "DownloadTooLargeError"})
+        uploaded.append(url)
+        return httpx.Response(200, json={"id": 7})
+
+    use_szurubooru(monkeypatch, handler)
+    posts = [fake_post(1), fake_post(2)]
+
+    first = scrape(monkeypatch, FakeSource(posts), limit=1)
+    second = scrape(monkeypatch, FakeSource(posts), limit=1)
+
+    assert first[-2]["failed"] == 1
+    assert fake_db.posts[("fake", 1)]["status"] == "rejected"
+    assert second[-2]["processed"] == 1
+    assert uploaded == ["http://source.test/2.png"]
+
+
 def test_limit_counts_new_posts_not_known_ones(monkeypatch, fake_db):
     use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
     for id in (1, 2, 3):
