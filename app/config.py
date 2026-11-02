@@ -24,6 +24,9 @@ SZURUBOORU_API_TOKEN = os.getenv("SZURUBOORU_API_TOKEN")
 CONCURRENT_UPLOADS = int(os.getenv("CONCURRENT_UPLOADS", "5"))
 BLACKLIST_TAGS = os.getenv("BLACKLIST_TAGS", "")
 
+APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
 APPRISE_URLS = os.getenv("APPRISE_URLS", "")
 NOTIFY_ON = os.getenv("NOTIFY_ON", "")
 

@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from app import config, db, http, integrity, notify, szurubooru
+from app import auth, config, db, http, integrity, notify, szurubooru
 from app.db import utcnow
 from app.http import run_log
 from app.sources.danbooru import DanbooruSource
@@ -156,6 +156,7 @@ class ScheduleState(BaseModel):
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(auth.RequireLogin)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
@@ -184,6 +185,7 @@ def repeatable(run):
     return bool(run.post_limit) and run.retry_of is None
 
 
+templates.env.globals["logged_in"] = auth.logged_in
 templates.env.tests["repeatable"] = repeatable
 templates.env.filters["duration"] = duration
 templates.env.filters["local_time"] = local_time
@@ -428,6 +430,42 @@ async def health():
         logger.exception("Health check could not reach the database")
         raise HTTPException(status_code=503, detail="Database unavailable") from None
     return {"status": "ok"}
+
+
+def login_page(request, error=None, status_code=200):
+    return templates.TemplateResponse(
+        request=request, name="login.html", context={"error": error}, status_code=status_code
+    )
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def show_login(request: Request):
+    if not auth.enabled() or auth.logged_in(request):
+        return RedirectResponse("/", status_code=303)
+    return login_page(request)
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login(request: Request):
+    if not auth.enabled():
+        return RedirectResponse("/", status_code=303)
+    client = request.client.host if request.client else ""
+    if auth.locked_out(client):
+        return login_page(request, "Too many failed attempts. Try again in a few minutes.", 429)
+    if not auth.password_matches(await auth.submitted_password(request)):
+        auth.record_failure(client)
+        return login_page(request, "Wrong password.", 401)
+    auth.clear_failures(client)
+    response = RedirectResponse("/", status_code=303)
+    auth.start_session(response)
+    return response
+
+
+@app.post("/logout")
+async def logout(request: Request):
+    response = RedirectResponse("/login", status_code=303)
+    auth.end_session(request, response)
+    return response
 
 
 @app.get("/", response_class=HTMLResponse)

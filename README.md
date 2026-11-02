@@ -15,6 +15,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 - Run history stored in Postgres, with each run's log and buttons to retry the posts that failed or run the same search again
 - Saved searches that run on a schedule, one at a time. Each picks up what's new and stops after 100 known posts in a row, so it doesn't crawl a whole tag every run
 - A stop button for a running scrape, which keeps the tags synced so far
+- Optional password login
 - Optional notifications through Apprise, with a choice of which events to send
 - A restart saves the log of any running scrape and marks it interrupted
 - `BLACKLIST_TAGS` in `.env` applies a blacklist to every scrape, on top of the one in the form
@@ -44,6 +45,18 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
    ```
 
    The app will be available at `http://localhost:8192`, and Postgres data persists to a Docker volume.
+
+## Login
+
+Login is optional and off by default, so anyone who can reach the port can use the app until you turn it on. Set `APP_PASSWORD` in `.env` and restart to require a password. If the password contains a `$`, put it in single quotes.
+
+This is meant for a trusted network. Over plain HTTP, someone able to watch the traffic can read the password, and there's no MFA, so anything reachable from the internet should sit behind HTTPS and a proper auth proxy. If you already have an auth proxy, leave `APP_PASSWORD` empty and don't publish the app's port.
+
+- Once the app is served over HTTPS, set `COOKIE_SECURE=true`. Leave it off for plain HTTP, or browsers will refuse the login cookie.
+- Sessions last a week and live in memory, so a restart logs everyone out. Changing the password needs a restart, so it does too.
+- Five wrong passwords lock that address out of new logins for five minutes. Behind a proxy, every client can look like the same address.
+- If a proxy sits in front of the app, it has to pass the original `Host` header, or requests that change anything are refused as cross-site.
+- `/health` stays open so monitoring keeps working. It only reports whether the app can reach its database.
 
 ## Notifications
 

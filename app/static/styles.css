@@ -63,7 +63,7 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
 }
 .topbar-title span { color: var(--accent); }
 
-.topbar-nav { display: flex; gap: 4px; }
+.topbar-nav { display: flex; align-items: center; gap: 4px; }
 .nav-link {
   padding: 5px 12px;
   border-radius: 6px;
@@ -74,6 +74,10 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
 }
 .nav-link:hover { color: var(--text); background: var(--card-hi); text-decoration: none; }
 .nav-link.active { color: var(--accent); background: var(--accent-dim); }
+.nav-button { display: block; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 500; line-height: inherit; cursor: pointer; }
+.login-card { max-width: 360px; margin: 48px auto 0; }
+.login-error { margin: 12px 0 0; font-size: 13px; color: var(--red); }
+.login-card .form-actions { margin-top: 16px; }
 
 /* ── section headers ─────────────────────────────────────────── */
 .section-head {
@@ -113,6 +117,7 @@ label {
 }
 
 input[type="text"],
+input[type="password"],
 input[type="number"],
 select {
   background: var(--surface);
@@ -126,6 +131,7 @@ select {
 }
 input[type="text"]::placeholder { color: var(--text-3); }
 input[type="text"]:focus,
+input[type="password"]:focus,
 input[type="number"]:focus,
 select:focus {
   border-color: var(--accent);
