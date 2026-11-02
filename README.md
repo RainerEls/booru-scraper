@@ -80,6 +80,7 @@ To build the image from source instead, run `docker compose up -d --build`.
 
 <!-- CHANGES:START -->
 - [`v0.2.0`](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/releases/tag/v0.2.0) (2026-11-02) — Merge pull request 'chore: run the published 0.2.0 image' (#61) from chore/publish-0.2.0 into main
+- [`v0.1.0`](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/releases/tag/v0.1.0) (2026-11-02) — Merge pull request 'fix: match tag categories by any case and retry rate-limited file checks' (#53) from fix/production-findings into main
 
 [All releases](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/releases)
 <!-- CHANGES:END -->
