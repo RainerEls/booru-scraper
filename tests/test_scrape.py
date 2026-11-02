@@ -42,6 +42,10 @@ class FakeDb:
             if self.posts.get(id, {}).get("status") == "queued":
                 del self.posts[id]
 
+    async def booru_post_for_md5(self, md5):
+        ids = [p.get("szurubooru_post_id") for p in self.posts.values() if p["md5"] == md5]
+        return next(filter(None, ids), None)
+
     async def count_tags(self):
         return len(self.tags)
 
@@ -614,3 +618,101 @@ def test_health_reports_whether_the_database_answers(monkeypatch):
     assert client.get("/health").status_code == 200
     monkeypatch.setattr(main.db, "ping", no_database)
     assert client.get("/health").status_code == 503
+
+
+def merge_booru(monkeypatch, current=None, status=200):
+    current = current or {"version": 3, "tags": [{"names": ["cat", "feline"]}], "source": "http://first.test/1"}
+    sent = []
+
+    def handler(request):
+        if request.method == "PUT" and "/post/" in str(request.url):
+            sent.append((str(request.url), json.loads(request.content)))
+        if "/post/" in str(request.url):
+            return httpx.Response(status, json=current)
+        if request.method == "POST" and str(request.url).endswith("/posts/"):
+            return httpx.Response(200, json={"id": 50})
+        return httpx.Response(404 if request.method == "GET" else 200, json={"results": [], "version": 1})
+
+    use_szurubooru(monkeypatch, handler)
+    return sent
+
+
+def duplicate_scrape(monkeypatch, fake_db, tags="cat dog", original=7):
+    fake_db.posts[("other", 9)] = {"md5": "md5-1", "status": "processed", "szurubooru_post_id": original}
+    source = FakeSource([fake_post(tags=tags)], tags.split())
+    source.post_page = "http://fake.test/{id}"
+    monkeypatch.setitem(main.SOURCES, "fake", source)
+    job = main.Job()
+    asyncio.run(main.run_scrape("job", job, main.ScrapeSpec("fake", 5)))
+    return job
+
+
+def test_a_duplicate_adds_its_tags_and_link_to_the_uploaded_post(monkeypatch, fake_db):
+    sent = merge_booru(monkeypatch)
+
+    job = duplicate_scrape(monkeypatch, fake_db)
+
+    assert sent == [
+        (
+            "http://szurubooru.test/api/post/7",
+            {"version": 3, "tags": ["cat", "dog"], "source": "http://first.test/1\nhttp://fake.test/1"},
+        )
+    ]
+    assert fake_db.posts[("fake", 1)]["status"] == "merged"
+    assert job.counters["skipped"] == 1
+    assert "dog" in fake_db.tags
+
+
+def test_a_duplicate_with_nothing_new_writes_nothing(monkeypatch, fake_db):
+    current = {"version": 3, "tags": [{"names": ["cat"]}], "source": "http://fake.test/1"}
+    sent = merge_booru(monkeypatch, current)
+
+    duplicate_scrape(monkeypatch, fake_db, tags="cat")
+
+    assert sent == []
+    assert fake_db.posts[("fake", 1)]["status"] == "merged"
+
+
+def test_a_failed_merge_is_tried_again_next_run(monkeypatch, fake_db):
+    merge_booru(monkeypatch, status=500)
+
+    job = duplicate_scrape(monkeypatch, fake_db)
+
+    assert ("fake", 1) not in fake_db.posts
+    assert job.status == "done"
+    assert any("retried next run" in line["message"] for line in job.lines)
+
+
+def test_a_duplicate_without_an_uploaded_original_stays_unclaimed(monkeypatch, fake_db):
+    sent = merge_booru(monkeypatch)
+
+    duplicate_scrape(monkeypatch, fake_db, original=None)
+
+    assert sent == []
+    assert ("fake", 1) not in fake_db.posts
+
+
+def test_a_post_szurubooru_already_has_is_merged_into_that_post(monkeypatch, fake_db):
+    current = {"version": 3, "tags": [{"names": ["cat"]}], "source": None}
+    sent = []
+
+    def handler(request):
+        if str(request.url).endswith("/posts/"):
+            return httpx.Response(400, json={"name": "PostAlreadyUploadedError", "otherPostId": 12})
+        if "/post/12" in str(request.url):
+            if request.method == "PUT":
+                sent.append(json.loads(request.content))
+            return httpx.Response(200, json=current)
+        return httpx.Response(404 if request.method == "GET" else 200, json={"results": []})
+
+    use_szurubooru(monkeypatch, handler)
+    source = FakeSource([fake_post(tags="cat dog")], ["cat", "dog"])
+    source.post_page = "http://fake.test/{id}"
+    monkeypatch.setitem(main.SOURCES, "fake", source)
+    job = main.Job()
+
+    asyncio.run(main.run_scrape("job", job, main.ScrapeSpec("fake", 5)))
+
+    assert sent == [{"version": 3, "tags": ["cat", "dog"], "source": "http://fake.test/1"}]
+    assert fake_db.posts[("fake", 1)]["status"] == "merged"
+    assert job.counters["skipped"] == 1

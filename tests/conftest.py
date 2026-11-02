@@ -8,6 +8,8 @@ os.environ.update(
     DB_HOST="localhost",
     DB_PORT="5432",
     DB_NAME="test",
+    APPRISE_URLS="",
+    NOTIFY_ON="",
     SZURUBOORU_BASE_URL="http://szurubooru.test/api",
     SZURUBOORU_USER_ID="test",
     SZURUBOORU_API_TOKEN="test",
