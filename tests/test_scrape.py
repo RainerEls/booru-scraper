@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -283,6 +284,83 @@ def test_retry_route_clears_rejections_and_starts_a_job(monkeypatch, fake_db):
     assert client.post("/api/runs/1/retry").json() == {"job_id": "job"}
     assert released == [("gelbooru", [4, 9])]
     assert started[0].post_ids == [4, 9]
+
+
+def test_a_scheduled_run_stops_once_it_is_caught_up(monkeypatch, fake_db):
+    for id in range(1, 4):
+        fake_db.posts[("fake", id)] = {"md5": f"md5-{id}", "status": "processed"}
+    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
+    source = FakeSource([fake_post(9)] + [fake_post(id) for id in range(1, 4)] + [fake_post(10)])
+    monkeypatch.setitem(main.SOURCES, "fake", source)
+    job = run_job()
+
+    asyncio.run(main.run_scrape("job", job, main.ScrapeSpec("fake", 10, stop_after_known=2)))
+
+    assert source.yielded == 3
+    assert ("fake", 9) in fake_db.posts
+    assert ("fake", 10) not in fake_db.posts
+
+
+def schedule(**fields):
+    now = main.utcnow()
+    defaults = dict(
+        id=1, source="gelbooru", tags="cat", blacklist_tags="", rating=None, post_limit=5,
+        interval_hours=24, enabled=True, last_run_at=now - timedelta(hours=25),
+    )
+    return SimpleNamespace(**{**defaults, **fields})
+
+
+def schedules_with(monkeypatch, fake_db, *rows):
+    started = []
+    marked = []
+
+    async def get_schedules():
+        return list(rows)
+
+    async def mark_schedule_started(id):
+        marked.append(id)
+
+    monkeypatch.setattr(fake_db, "get_schedules", get_schedules, raising=False)
+    monkeypatch.setattr(fake_db, "mark_schedule_started", mark_schedule_started, raising=False)
+    monkeypatch.setattr(main, "start_job", lambda spec: started.append(spec) or "job")
+    return started, marked
+
+
+@pytest.mark.parametrize(
+    "fields, due",
+    [
+        ({}, True),
+        ({"last_run_at": None}, True),
+        ({"last_run_at": main.utcnow() - timedelta(hours=1)}, False),
+        ({"enabled": False}, False),
+        ({"source": "removed"}, False),
+    ],
+)
+def test_only_due_schedules_start(monkeypatch, fake_db, fields, due):
+    started, marked = schedules_with(monkeypatch, fake_db, schedule(**fields))
+
+    asyncio.run(main.start_due_schedule())
+
+    assert bool(started) is due
+    assert bool(marked) is due
+
+
+def test_schedules_wait_for_a_running_scrape_and_run_one_at_a_time(monkeypatch, fake_db):
+    started, _ = schedules_with(monkeypatch, fake_db, schedule(id=1), schedule(id=2))
+
+    job = run_job()
+    asyncio.run(main.start_due_schedule())
+    assert started == []
+
+    job.finished = True
+    asyncio.run(main.start_due_schedule())
+    assert [spec.schedule_id for spec in started] == [1]
+    assert started[0].stop_after_known == main.SCHEDULED_STOP_AFTER_KNOWN
+
+
+def test_a_schedule_without_an_interval_is_refused():
+    response = TestClient(main.app).post("/api/schedules", json={"source": "gelbooru", "limit": 1})
+    assert response.status_code == 422
 
 
 def test_limit_counts_new_posts_not_known_ones(monkeypatch, fake_db):

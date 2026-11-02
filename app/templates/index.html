@@ -69,6 +69,11 @@
       <button type="submit" class="btn btn--primary" id="submit-btn">
         <span id="submit-label">Start Scrape</span>
       </button>
+      <span class="form-actions__gap"></span>
+      <label for="interval_hours">Every</label>
+      <input type="number" id="interval_hours" value="24" min="1" max="720">
+      <label for="interval_hours">hours</label>
+      <button type="button" class="btn btn--secondary" id="schedule-btn">Save as Schedule</button>
     </div>
 
   </form>
@@ -120,6 +125,56 @@
   </div>
 
 </div>
+
+<div class="section-head">
+  <h2>Schedules</h2>
+  <div class="rule"></div>
+</div>
+
+<p class="section-note">Runs one saved search at a time. Each run takes the newest posts up to its limit and stops after {{ stop_after_known }} known posts in a row, so use a normal scrape to fill in older posts.</p>
+
+{% if schedules %}
+<div class="card card--flush">
+  <table class="history-table">
+    <thead>
+      <tr>
+        <th>Source</th>
+        <th>Rating</th>
+        <th>Tags</th>
+        <th>Blacklisted</th>
+        <th class="num">Limit</th>
+        <th class="num">Every</th>
+        <th>Last Run</th>
+        <th>Next Run</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for schedule in schedules %}
+      <tr data-schedule="{{ schedule.id }}" data-enabled="{{ schedule.enabled | tojson }}">
+        <td>{{ schedule.source }}</td>
+        <td>{{ (schedule.rating or 'any') | capitalize }}</td>
+        <td class="tags-cell">{{ schedule.tags or '—' }}</td>
+        <td class="blacklist-cell">{{ schedule.blacklist_tags or '—' }}</td>
+        <td class="num">{{ schedule.post_limit }}</td>
+        <td class="num">{{ schedule.interval_hours }}h</td>
+        <td class="mono time-cell">{{ schedule.last_run_at.strftime('%Y-%m-%d %H:%M') if schedule.last_run_at else '—' }}</td>
+        <td class="mono time-cell">{{ (schedule | next_run).strftime('%Y-%m-%d %H:%M') if schedule.enabled else 'Paused' }}</td>
+        <td class="schedule-actions">
+          <button type="button" class="btn btn--secondary schedule-run">Run</button>
+          <button type="button" class="btn btn--secondary schedule-toggle">{{ 'Pause' if schedule.enabled else 'Resume' }}</button>
+          <button type="button" class="btn btn--danger schedule-delete">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card empty-state">
+  <p>No schedules yet. Fill in the form above and press Save as Schedule.</p>
+</div>
+{% endif %}
 
 {% endblock %}
 
@@ -279,22 +334,49 @@
       if (active.length) followJob(active[active.length - 1]);
     });
 
-  form.addEventListener('submit', function(e) {
-    e.preventDefault();
-
-    const payload = {
+  function formValues() {
+    return {
       source:    document.getElementById('source').value,
       rating:    document.getElementById('rating').value,
       limit:     parseInt(document.getElementById('limit').value),
       tags:      document.getElementById('tags').value.trim(),
       blacklist_tags: document.getElementById('blacklist_tags').value.trim(),
     };
+  }
 
-    fetch('/scrape', {
-      method: 'POST',
+  function sendJson(url, method, body) {
+    return fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
+      body: JSON.stringify(body),
+    });
+  }
+
+  document.getElementById('schedule-btn').addEventListener('click', function() {
+    const interval_hours = parseInt(document.getElementById('interval_hours').value);
+    sendJson('/api/schedules', 'POST', { ...formValues(), interval_hours }).then(() => location.reload());
+  });
+
+  document.querySelectorAll('[data-schedule]').forEach(row => {
+    const url = `/api/schedules/${row.dataset.schedule}`;
+    row.querySelector('.schedule-run').addEventListener('click', () => {
+      fetch(`${url}/run`, { method: 'POST' }).then(() => location.reload());
+    });
+    row.querySelector('.schedule-toggle').addEventListener('click', () => {
+      const enabled = row.dataset.enabled !== 'true';
+      sendJson(url, 'PATCH', { enabled }).then(() => location.reload());
+    });
+    row.querySelector('.schedule-delete').addEventListener('click', () => {
+      if (confirm('Delete this schedule? Its past runs stay on the Activity page.')) {
+        fetch(url, { method: 'DELETE' }).then(() => location.reload());
+      }
+    });
+  });
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    sendJson('/scrape', 'POST', formValues())
     .then(res => {
       if (!res.ok) throw new Error(`Scrape request failed: ${res.status}`);
       return res.json();

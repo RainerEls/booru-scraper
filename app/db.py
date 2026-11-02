@@ -78,6 +78,22 @@ class Runs(Base):
     finished_at: Mapped[datetime] = mapped_column(nullable=True)
     log: Mapped[list] = mapped_column(JSON, nullable=True)
     failed_posts: Mapped[list] = mapped_column(JSON, nullable=True)
+    schedule_id: Mapped[int] = mapped_column(nullable=True)
+
+
+class Schedules(Base):
+    __tablename__ = "schedules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    source: Mapped[str] = mapped_column()
+    tags: Mapped[str] = mapped_column()
+    blacklist_tags: Mapped[str] = mapped_column()
+    rating: Mapped[str] = mapped_column(nullable=True)
+    post_limit: Mapped[int] = mapped_column()
+    interval_hours: Mapped[int] = mapped_column()
+    enabled: Mapped[bool] = mapped_column(default=True)
+    last_run_at: Mapped[datetime] = mapped_column(nullable=True)
 
 
 class IntegrityChecks(Base):
@@ -212,7 +228,7 @@ async def get_runs():
         return (await session.scalars(select(Runs).order_by(Runs.created_at.desc()).limit(100))).all()
 
 
-async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, status):
+async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, status, schedule_id=None):
     async with Session() as session:
         run = Runs(
             uuid=uuid,
@@ -222,6 +238,7 @@ async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, sta
             rating=rating,
             post_limit=post_limit,
             status=status,
+            schedule_id=schedule_id,
         )
         session.add(run)
         await session.commit()
@@ -248,3 +265,40 @@ async def update_run(id, total, processed, skipped, failed, status, log, failed_
 async def get_run(id):
     async with Session() as session:
         return await session.get(Runs, id)
+
+
+async def get_schedules():
+    async with Session() as session:
+        return (await session.scalars(select(Schedules).order_by(Schedules.created_at))).all()
+
+
+async def get_schedule(id):
+    async with Session() as session:
+        return await session.get(Schedules, id)
+
+
+async def create_schedule(source, tags, blacklist_tags, rating, post_limit, interval_hours):
+    async with Session() as session:
+        schedule = Schedules(
+            source=source,
+            tags=tags,
+            blacklist_tags=blacklist_tags,
+            rating=rating,
+            post_limit=post_limit,
+            interval_hours=interval_hours,
+        )
+        session.add(schedule)
+        await session.commit()
+        return schedule.id
+
+
+async def set_schedule_enabled(id, enabled):
+    await write(update(Schedules).where(Schedules.id == id).values(enabled=enabled))
+
+
+async def mark_schedule_started(id):
+    await write(update(Schedules).where(Schedules.id == id).values(last_run_at=utcnow()))
+
+
+async def delete_schedule(id):
+    await write(delete(Schedules).where(Schedules.id == id))
