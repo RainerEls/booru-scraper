@@ -41,6 +41,8 @@ class DanbooruSource(PostTaggedSource):
         "tag_string_character": "character",
         "tag_string_meta": "metadata",
     }
+    search_hint = "Sort with order:score. Without a paid account: 2 tags, plus a rating."
+    post_page = "https://danbooru.donmai.us/posts/{id}"
 
     async def search_posts(self, tags="", blacklist_tags="", rating=None):
         terms = self.search_terms(tags, "", rating)

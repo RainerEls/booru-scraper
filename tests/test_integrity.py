@@ -120,6 +120,7 @@ class RepullSource(BooruSource):
     async def search_posts(self, tags=""):
         if self.known:
             yield {
+                "id": 1,
                 "file_url": "http://src.test/new.png",
                 "tags": "a b",
                 "rating": "general",

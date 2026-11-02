@@ -44,6 +44,7 @@ class Job:
         self.finished = False
         self.status = "done"
         self.counters = {"processed": 0, "skipped": 0, "failed": 0, "total": 0}
+        self.progress = {"phase": "Starting", "done": 0, "goal": 0}
         self.failures = []
 
     def publish(self, event):
@@ -51,12 +52,23 @@ class Job:
         self.updated.set()
         self.updated = asyncio.Event()
 
+    def state(self):
+        return {**self.counters, **self.progress}
+
+    def start_phase(self, phase, goal):
+        self.progress = {"phase": phase, "done": 0, "goal": goal}
+        self.publish(self.state())
+
+    def advance(self):
+        self.progress["done"] += 1
+        self.publish(self.state())
+
     def log(self, level, message):
         getattr(logger, level)(message)
         if level == "debug":
-            self.publish({**self.counters})
+            self.publish(self.state())
         else:
-            self.publish({**self.counters, "log": message, "level": level})
+            self.publish({**self.state(), "log": message, "level": level})
 
     def count(self, field, message, level="debug"):
         self.counters[field] += 1
@@ -97,6 +109,19 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 
+def duration(run):
+    if not run.finished_at:
+        return "—"
+    minutes, seconds = divmod(int((run.finished_at - run.created_at).total_seconds()), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
+
+
+templates.env.filters["duration"] = duration
+
+
 def response_json(r):
     try:
         return r.json()
@@ -107,7 +132,7 @@ def response_json(r):
 async def process_post(source, db_entry, post, semaphore, job):
     async with semaphore:
         try:
-            r = await szurubooru.upload_post(post, source.safety(post))
+            r = await szurubooru.upload_post(post, source.safety(post), source.source_links(post))
             body = response_json(r)
 
             if r.status_code == 200:
@@ -131,6 +156,8 @@ async def process_post(source, db_entry, post, semaphore, job):
         except Exception as e:
             logger.exception(f"Unhandled exception processing post {post['id']}")
             job.count("failed", f"Unhandled error for post {post['id']}: {e!r}", "error")
+        finally:
+            job.advance()
 
 
 async def claim_if_new(job, source_name, post):
@@ -150,6 +177,7 @@ async def claim_if_new(job, source_name, post):
 
 async def find_new_posts(job, source_name, search, limit, new_posts):
     source = SOURCES[source_name]
+    job.start_phase("Searching", limit)
     try:
         async for post in source.search_posts(**search):
             job.count("total", f"Found post {post['id']}")
@@ -158,6 +186,7 @@ async def find_new_posts(job, source_name, search, limit, new_posts):
                 continue
             post["notes"] = await source.grab_notes(post)
             new_posts.append((db_entry, post))
+            job.advance()
             if len(new_posts) >= limit:
                 return
     except Exception as e:
@@ -173,15 +202,15 @@ async def sync_unknown_tags(job, source, new_posts):
         return
 
     new_tags = await source.grab_tags(unknown_tags)
-    for synced, tag in enumerate(new_tags):
-        if synced % 100 == 0:
-            job.log("info", f"Syncing tags: {synced}/{len(new_tags)}")
+    job.start_phase("Syncing tags", len(new_tags))
+    for tag in new_tags:
         try:
             await szurubooru.sync_tag(tag["name"], tag["category"])
         except httpx.HTTPError as e:
             job.log("warning", f"Tag {tag['name']} failed to sync: {e!r}")
         else:
             await db.store_tag(tag["name"])
+        job.advance()
 
 
 def report_failures(job):
@@ -198,7 +227,8 @@ def report_failures(job):
 async def run_scrape(run_id, job, limit, source_name, tags, blacklist_tags, rating):
     source = SOURCES[source_name]
     new_posts = []
-    search = {"tags": tags or "", "blacklist_tags": blacklist_tags or "", "rating": rating}
+    blacklist_tags = " ".join(dict.fromkeys(f"{config.BLACKLIST_TAGS} {blacklist_tags or ''}".split()))
+    search = {"tags": tags or "", "blacklist_tags": blacklist_tags, "rating": rating}
     run = None
     logger.info(f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist: [{blacklist_tags}]")
 
@@ -220,7 +250,7 @@ async def run_scrape(run_id, job, limit, source_name, tags, blacklist_tags, rati
         await find_new_posts(job, source_name, search, limit, new_posts)
         await sync_unknown_tags(job, source, new_posts)
 
-        job.log("info", f"Uploading {len(new_posts)} post(s)")
+        job.start_phase("Uploading", len(new_posts))
         semaphore = asyncio.Semaphore(config.CONCURRENT_UPLOADS)
         await asyncio.gather(*[process_post(source, entry, post, semaphore, job) for entry, post in new_posts])
         job.log("info", " - ".join(f"{field.title()}: {count}" for field, count in job.counters.items()))
@@ -241,12 +271,17 @@ def check_busy(checks):
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+    return templates.TemplateResponse(
+        request=request, name="index.html", context={"always_blacklisted": config.BLACKLIST_TAGS}
+    )
 
 
 @app.get("/api/sources")
 async def get_sources():
-    return list(SOURCES.keys())
+    return [
+        {"name": name, "configured": source.configured, "hint": source.search_hint}
+        for name, source in SOURCES.items()
+    ]
 
 
 @app.get("/history")
@@ -316,6 +351,8 @@ async def scrape_progress(job: Annotated[Job, Depends(get_job)]):
 
 @app.post("/scrape")
 async def scrape(background_tasks: BackgroundTasks, scrape_request: Scrape):
+    if not SOURCES[scrape_request.source].configured:
+        raise HTTPException(status_code=422, detail=f"{scrape_request.source} needs its credentials in .env")
     for job_id in [job_id for job_id, job in jobs.items() if job.finished]:
         del jobs[job_id]
     job_id = str(uuid.uuid4())

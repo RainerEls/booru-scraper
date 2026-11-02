@@ -13,6 +13,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 - Dedup against your szurubooru instance by MD5 and by source post ID, so re-running a scrape won't create duplicates
 - Automatically pulls in and syncs any tags it doesn't already know about
 - Run history stored in Postgres
+- `BLACKLIST_TAGS` in `.env` applies a blacklist to every scrape, on top of the one in the form
 - Integrity checks that compare uploaded posts with what's on szurubooru, telling deliberately deleted or merged posts apart from ones that went missing. They only report, with a separate re-pull button for posts that are missing or damaged, which never touches deleted or merged ones
 - Pluggable source architecture, with Gelbooru, Danbooru, Yandere, e621 and Rule34 wired up
 
@@ -82,7 +83,7 @@ Autogenerate misses some changes, such as renames, so check it. Write a `downgra
 
 ## Adding a source
 
-Each source is one module in `app/sources/`. It implements `search_posts()` and `grab_tags()` from `base.py` (`grab_notes()` is optional), creates its `session` with `http.client()`, and sets three maps: `ratings` (its ratings to `safe`/`sketchy`/`unsafe`), `rating_terms` (the reverse, as search terms) and `tag_categories` (its tag types to szurubooru categories, which are created on the booru if missing). `base.py` has paging helpers for the common API styles.
+Each source is one module in `app/sources/`. It implements `search_posts()` and `grab_tags()` from `base.py` (`grab_notes()` is optional), creates its `session` with `http.client()`, sets `post_page` (the URL of a post, saved as its source), and optionally `credentials` (required values, which grey it out in the UI if missing) and `search_hint` (shown under the Tags field). It also sets three maps: `ratings` (its ratings to `safe`/`sketchy`/`unsafe`), `rating_terms` (the reverse, as search terms) and `tag_categories` (its tag types to szurubooru categories, which are created on the booru if missing). `base.py` has paging helpers for the common API styles.
 
 Register it in `SOURCES` in `app/main.py` and it shows up in the UI's source dropdown. Add its credentials to `app/config.py` and `.env.example`; its rate limit is read from `<NAME>_RATE_LIMIT` through `config.rate_limit()`.
 

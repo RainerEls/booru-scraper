@@ -74,6 +74,9 @@ class GelbooruSource(BooruSource):
         "unsafe": "rating:explicit",
     }
     tag_categories = {0: "general", 1: "artist", 3: "copyright", 4: "character", 5: "metadata", 6: "general"}
+    credentials = (config.GELBOORU_API_KEY, config.GELBOORU_USER_ID)
+    search_hint = "Sort with sort:score or sort:updated."
+    post_page = "https://gelbooru.com/index.php?page=post&s=view&id={id}"
 
     def search_posts(self, tags="", blacklist_tags="", rating=None):
         terms = self.search_terms(tags, blacklist_tags, rating)
