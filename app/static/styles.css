@@ -66,6 +66,29 @@ button, select, input, textarea { font-family: inherit; font-size: .9375rem; }
   * { transition: none !important; }
 }
 
+/* ── icons ──────────────────────────────────────────────────── */
+.icon::before,
+.status-badge::before,
+.log-line--warning::before,
+.log-line--error::before {
+  content: '';
+  display: inline-block; flex: none;
+  width: 1.15em; height: 1.15em;
+  background: currentColor;
+  mask: var(--icon) center / contain no-repeat;
+}
+.icon-play { --icon: url('icons/play.svg'); }
+.icon-pause { --icon: url('icons/pause.svg'); }
+.icon-stop { --icon: url('icons/square.svg'); }
+.icon-schedule { --icon: url('icons/calendar-clock.svg'); }
+.icon-check { --icon: url('icons/shield-check.svg'); }
+.icon-repull { --icon: url('icons/download.svg'); }
+.icon-retry { --icon: url('icons/rotate-ccw.svg'); }
+.icon-again { --icon: url('icons/repeat.svg'); }
+.icon-delete { --icon: url('icons/trash-2.svg'); }
+.icon-login { --icon: url('icons/log-in.svg'); }
+.icon-logout { --icon: url('icons/log-out.svg'); }
+
 /* ── typography ──────────────────────────────────────────────── */
 .display { font-family: 'Space Grotesk', system-ui, sans-serif; }
 
@@ -102,8 +125,10 @@ button, select, input, textarea { font-family: inherit; font-size: .9375rem; }
 }
 .nav-link:hover { color: var(--text); background: var(--card-hi); text-decoration: none; }
 .nav-link.active { color: var(--accent); background: var(--accent-dim); }
-.nav-button { display: block; border: 0; background: none; font: inherit; font-size: .9375rem; font-weight: 500; line-height: inherit; cursor: pointer; }
-.theme-select { width: auto; padding: 4px 26px 4px 8px; font-size: .875rem; background-position: right 7px center; }
+.nav-button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; font: inherit; font-size: .9375rem; font-weight: 500; line-height: inherit; cursor: pointer; }
+.theme-toggle { --icon: url('icons/sun-moon.svg'); }
+:root[data-theme="light"] .theme-toggle { --icon: url('icons/sun.svg'); }
+:root[data-theme="dark"] .theme-toggle { --icon: url('icons/moon.svg'); }
 .login-card { max-width: 24rem; margin: 48px auto 0; }
 .login-error { margin: 12px 0 0; font-size: .9375rem; color: var(--red); }
 .login-card .form-actions { margin-top: 16px; }
@@ -274,8 +299,9 @@ select { cursor: pointer; appearance: none;
   color: var(--text-3);
 }
 .log-line { color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
-.log-line--error   { color: var(--red); }
-.log-line--warning { color: var(--amber); }
+.log-line--error   { color: var(--red); --icon: url('icons/circle-x.svg'); }
+.log-line--warning { color: var(--amber); --icon: url('icons/triangle-alert.svg'); }
+.log-line::before { margin-right: .4em; vertical-align: -.2em; }
 .log-line--info    { color: var(--text-2); }
 
 /* ── status badge ────────────────────────────────────────────── */
@@ -283,12 +309,19 @@ select { cursor: pointer; appearance: none;
   font-family: 'Space Grotesk', sans-serif;
   font-size: .8125rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .08em;
-  display: inline-block; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  box-sizing: border-box;
   min-width: 7.5rem; padding: 3px 8px;
-  text-align: center; white-space: nowrap;
+  white-space: nowrap;
   border-radius: 99px;
   border: 1px solid;
 }
+.status-badge--running { --icon: url('icons/loader-circle.svg'); }
+.status-badge--done { --icon: url('icons/check.svg'); }
+.status-badge--error { --icon: url('icons/circle-x.svg'); }
+.status-badge--stopped,
+.status-badge--interrupted,
+.status-badge--skipped { --icon: url('icons/circle-alert.svg'); }
 .status-badge--running {
   color: var(--accent); background: var(--accent-dim);
   border-color: var(--border-hi);
@@ -361,7 +394,10 @@ select { cursor: pointer; appearance: none;
 .check-issues { list-style: none; margin-top: 8px; overflow-wrap: anywhere; }
 .check-issues li { padding: 4px 0; }
 .log--run { margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; }
-.run-action { margin-top: 10px; padding: 4px 10px; font-size: .875rem; }
+.history-table td.run-detail { position: relative; height: 2.8rem; }
+.run-detail summary { padding-right: 18rem; }
+.run-actions { position: absolute; top: 7px; right: 10px; display: flex; gap: 6px; }
+.run-action { padding: 4px 10px; font-size: .875rem; }
 .check-repull { margin-left: 6px; color: var(--text-2); font-weight: 500; }
 
 /* ── small screens ───────────────────────────────────────────── */
