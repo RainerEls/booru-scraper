@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import alembic.command
 import alembic.config
-from sqlalchemy import JSON, UniqueConstraint, delete, func, select, update
+from sqlalchemy import JSON, UniqueConstraint, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -114,6 +114,11 @@ async def close_db():
     await engine.dispose()
 
 
+async def ping():
+    async with Session() as session:
+        await session.execute(text("SELECT 1"))
+
+
 async def has_row(table, *conditions):
     async with Session() as session:
         return (await session.execute(select(table.id).where(*conditions).limit(1))).first() is not None
@@ -159,8 +164,8 @@ async def release_stale_claims():
     await write(delete(Posts).where(Posts.status.in_(("queued", "failed"))))
 
 
-async def fail_interrupted_runs():
-    await write(update(Runs).where(Runs.status == "running").values(status="error"))
+async def mark_interrupted_work():
+    await write(update(Runs).where(Runs.status == "running").values(status="interrupted"))
     await write(
         update(IntegrityChecks)
         .where(IntegrityChecks.status.in_(CHECK_BUSY))

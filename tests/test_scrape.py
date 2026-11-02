@@ -1,6 +1,7 @@
 import asyncio
 import json
-from datetime import timedelta
+import time
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -566,3 +567,50 @@ def test_a_category_failure_does_not_stop_the_run(monkeypatch, fake_db):
 
     assert "tag categories" in warnings(messages)[0]
     assert messages[-1] == {"status": "done"}
+
+
+def test_local_time_follows_tz(monkeypatch):
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    time.tzset()
+    try:
+        assert main.local_time(datetime(2026, 11, 1, 20, 30)) == "2026-11-02 05:30"
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+
+def test_a_restart_marks_the_run_interrupted_and_keeps_its_log(monkeypatch, fake_db):
+    class SlowSource(FakeSource):
+        async def search_posts(self, **kwargs):
+            await asyncio.Event().wait()
+            yield
+
+    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"results": []}))
+    monkeypatch.setitem(main.SOURCES, "fake", SlowSource([]))
+
+    async def scenario():
+        job = main.Job()
+        job.task = asyncio.create_task(main.run_scrape("run", job, main.ScrapeSpec(source="fake", limit=1)))
+        await asyncio.sleep(0.01)
+        job.stop("interrupted")
+        await job.task
+        return job
+
+    job = asyncio.run(scenario())
+    assert fake_db.runs[1] == "interrupted"
+    assert job.events[-1] == {"status": "interrupted"}
+    assert any(line["message"] == "Interrupted" for line in job.lines)
+
+
+def test_health_reports_whether_the_database_answers(monkeypatch):
+    async def ping():
+        return None
+
+    async def no_database():
+        raise OSError("connection refused")
+
+    client = TestClient(main.app)
+    monkeypatch.setattr(main.db, "ping", ping)
+    assert client.get("/health").status_code == 200
+    monkeypatch.setattr(main.db, "ping", no_database)
+    assert client.get("/health").status_code == 503

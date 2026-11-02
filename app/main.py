@@ -3,7 +3,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, timedelta
 from typing import Annotated, Literal
 
 import httpx
@@ -26,6 +26,14 @@ from app.sources.yandere import YandereSource
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.getLevelName(config.LOGLEVEL))
 logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+class HideHealthChecks(logging.Filter):
+    def filter(self, record):
+        return "/health" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(HideHealthChecks())
 
 SOURCES = {
     "gelbooru": GelbooruSource(),
@@ -54,6 +62,7 @@ class Job:
         self.lines = []
         self.task = None
         self.stopping = False
+        self.stop_status = "stopped"
 
     def publish(self, event):
         self.events.append(event)
@@ -87,9 +96,10 @@ class Job:
         self.status = "error"
         self.log("error", message)
 
-    def stop(self):
+    def stop(self, status="stopped"):
         if self.task and not self.stopping:
             self.stopping = True
+            self.stop_status = status
             self.task.cancel()
 
     def finish(self):
@@ -102,14 +112,14 @@ async def lifespan(app: FastAPI):
     config.validate()
     await db.migrate()
     await db.release_stale_claims()
-    await db.fail_interrupted_runs()
+    await db.mark_interrupted_work()
     scheduler = asyncio.create_task(run_schedules())
 
     yield
 
     scheduler.cancel()
     for job in jobs.values():
-        job.stop()
+        job.stop("interrupted")
     await asyncio.gather(*[job.task for job in jobs.values() if job.task], return_exceptions=True)
     await http.close_clients()
     await db.close_db()
@@ -164,7 +174,12 @@ def next_run(schedule):
     return schedule.last_run_at + timedelta(hours=schedule.interval_hours)
 
 
+def local_time(moment):
+    return moment.replace(tzinfo=UTC).astimezone().strftime("%Y-%m-%d %H:%M")
+
+
 templates.env.filters["duration"] = duration
+templates.env.filters["local_time"] = local_time
 templates.env.filters["next_run"] = next_run
 
 
@@ -312,8 +327,8 @@ async def run_scrape(run_id, job, spec):
         await asyncio.gather(*[process_post(source, entry, post, semaphore, job) for entry, post in new_posts])
         job.log("info", " - ".join(f"{field.title()}: {count}" for field, count in job.counters.items()))
     except asyncio.CancelledError:
-        job.status = "stopped"
-        job.log("warning", "Stopped")
+        job.status = job.stop_status
+        job.log("warning", job.status.capitalize())
     except Exception as e:
         logger.exception("Scrape failed")
         job.error(f"Scrape failed: {e!r}")
@@ -333,6 +348,16 @@ async def run_scrape(run_id, job, spec):
 
 def check_busy(checks):
     return any(check.status in db.CHECK_BUSY for check in checks)
+
+
+@app.get("/health")
+async def health():
+    try:
+        await db.ping()
+    except Exception:
+        logger.exception("Health check could not reach the database")
+        raise HTTPException(status_code=503, detail="Database unavailable") from None
+    return {"status": "ok"}
 
 
 @app.get("/", response_class=HTMLResponse)

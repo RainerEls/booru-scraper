@@ -37,6 +37,7 @@ services:
     image: booru-scraper:latest
     container_name: booru-scraper
     restart: unless-stopped
+    stop_grace_period: 30s
 
     depends_on:
       database:
@@ -52,6 +53,13 @@ services:
       - DB_PORT=5432
       - DB_NAME=${DB_NAME}
     
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
     ports:
       - 8192:8000
 

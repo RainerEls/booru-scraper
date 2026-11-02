@@ -158,8 +158,8 @@
         <td class="blacklist-cell">{{ schedule.blacklist_tags or '—' }}</td>
         <td class="num">{{ schedule.post_limit }}</td>
         <td class="num">{{ schedule.interval_hours }}h</td>
-        <td class="mono time-cell">{{ schedule.last_run_at.strftime('%Y-%m-%d %H:%M') if schedule.last_run_at else '—' }}</td>
-        <td class="mono time-cell">{{ (schedule | next_run).strftime('%Y-%m-%d %H:%M') if schedule.enabled else 'Paused' }}</td>
+        <td class="mono time-cell">{{ schedule.last_run_at | local_time if schedule.last_run_at else '—' }}</td>
+        <td class="mono time-cell">{{ schedule | next_run | local_time if schedule.enabled else 'Paused' }}</td>
         <td class="schedule-actions">
           <button type="button" class="btn btn--secondary schedule-run">Run</button>
           <button type="button" class="btn btn--secondary schedule-toggle">{{ 'Pause' if schedule.enabled else 'Resume' }}</button>
@@ -204,7 +204,7 @@
   let eventSource = null;
   let currentJob = null;
 
-  const STATUS_LABELS = { done: 'Done', stopped: 'Stopped', error: 'Error' };
+  const STATUS_LABELS = { done: 'Done', stopped: 'Stopped', interrupted: 'Interrupted', error: 'Error' };
 
   const PERSIST_KEYS = ['source', 'rating', 'limit', 'tags', 'blacklist_tags'];
 

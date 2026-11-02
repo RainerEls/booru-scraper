@@ -1,12 +1,14 @@
 import logging
 import os
 import sys
+import time
 
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+time.tzset()
 
 LOGLEVEL = os.getenv("LOGLEVEL", "INFO")
 

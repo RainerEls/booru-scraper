@@ -15,6 +15,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 - Run history stored in Postgres, with each run's log and a button to retry the posts that failed
 - Saved searches that run on a schedule, one at a time. Each picks up what's new and stops after 100 known posts in a row, so it doesn't crawl a whole tag every run
 - A stop button for a running scrape, which keeps the tags synced so far
+- A restart saves the log of any running scrape and marks it interrupted
 - `BLACKLIST_TAGS` in `.env` applies a blacklist to every scrape, on top of the one in the form
 - Integrity checks that compare uploaded posts with what's on szurubooru, telling deliberately deleted or merged posts apart from ones that went missing. They only report, with a separate re-pull button for posts that are missing or damaged, which never touches deleted or merged ones
 - Pluggable source architecture, with Gelbooru, Danbooru, Yandere, e621 and Rule34 wired up
@@ -33,6 +34,8 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
 
    You'll need a `SZURUBOORU_BASE_URL`, a `SZURUBOORU_USER_ID`, and a `SZURUBOORU_API_TOKEN` for an account with permission to create posts. You'll also need a `GELBOORU_API_KEY` and `GELBOORU_USER_ID` — Gelbooru's API rejects unauthenticated requests outright, so these aren't optional. `YANDERE_USER_ID` and `YANDERE_PASSWORD_HASH` are optional, as are `DANBOORU_USER_ID`/`DANBOORU_API_KEY` and `E621_USER_ID`/`E621_API_KEY`. Without a paid account, Danbooru allows 2 search tags plus a rating; the blacklist is applied locally and doesn't count. `RULE34_USER_ID` (the number from the account page, not the username) and `RULE34_API_KEY` are required for Rule34, which allows 60 requests a minute. Its tag lookups go to Gelbooru first, in batches, and anything left is looked up on Rule34 one at a time, so its first runs are slow.
 
+   Set `TZ` to your timezone, such as `America/Chicago`, to show times in it. Times are stored in UTC either way.
+
 2. Bring it up:
 
    ```bash
@@ -40,6 +43,10 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
    ```
 
    The app will be available at `http://localhost:8192`, and Postgres data persists to a Docker volume.
+
+## Health check
+
+`GET /health` answers 200 while the app can reach its database and 503 when it can't. The compose file polls it, so `docker ps` shows the app's health, and monitoring tools can poll it too.
 
 ## Upgrading
 
