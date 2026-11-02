@@ -8,14 +8,20 @@ from app.sources.base import PostTaggedSource, danbooru_style_pages, notes_to_ma
 logger = logging.getLogger(__name__)
 
 API_URL = "https://e621.net"
-RATE_LIMIT = config.rate_limit("E621")
 PAGE_SIZE = 320
 MAX_NUMBERED_PAGES = 750
 
-session = http.client(
-    headers={"User-Agent": f"booru-scraper (by {config.E621_USER_ID or 'anonymous'} on e621)"},
-    auth=(config.E621_USER_ID, config.E621_API_KEY) if config.E621_USER_ID else None,
-)
+
+def configure():
+    global RATE_LIMIT, session
+    RATE_LIMIT = config.rate_limit("E621")
+    session = http.client(
+        headers={"User-Agent": f"booru-scraper (by {config.E621_USER_ID or 'anonymous'} on e621)"},
+        auth=(config.E621_USER_ID, config.E621_API_KEY) if config.E621_USER_ID else None,
+    )
+
+
+configure()
 
 
 async def fetch_page(terms, page):

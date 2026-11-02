@@ -19,7 +19,8 @@ A small web app for pulling posts from booru-style image boards and uploading th
 - Optional password login
 - Optional notifications through Apprise, with a choice of which events to send
 - A restart saves the log of any running scrape and marks it interrupted
-- `BLACKLIST_TAGS` in `.env` applies a blacklist to every scrape, on top of the one in the form
+- A blacklist in Settings that applies to every scrape, on top of the one in the form
+- A Settings page, with keys and tokens encrypted in the database
 - Integrity checks that compare uploaded posts with what's on szurubooru, telling deliberately deleted or merged posts apart from ones that went missing. They only report, with a separate re-pull button for posts that are missing or damaged, which never touches deleted or merged ones
 - Pluggable source architecture, with Gelbooru, Danbooru, Yandere, e621 and Rule34 wired up
 
@@ -29,13 +30,11 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
 
 ## Setup
 
-1. Copy the example env file and fill in your details:
+1. Copy the example env file and set the database credentials and a `SETTINGS_KEY`, which encrypts saved keys and tokens (`openssl rand -hex 32` makes one):
 
    ```bash
    cp .env.example .env
    ```
-
-   You'll need a `SZURUBOORU_BASE_URL` (ending in `/api`, such as `https://booru.example.com/api`), a `SZURUBOORU_USER_ID`, and a `SZURUBOORU_API_TOKEN` for an account with permission to create posts. You'll also need a `GELBOORU_API_KEY` and `GELBOORU_USER_ID` — Gelbooru's API rejects unauthenticated requests outright, so these aren't optional. `YANDERE_USER_ID` and `YANDERE_PASSWORD_HASH` are optional, as are `DANBOORU_USER_ID`/`DANBOORU_API_KEY` and `E621_USER_ID`/`E621_API_KEY`. Without a paid account, Danbooru allows 2 search tags plus a rating, and `order:` counts as one. Plain tags past the account's limit are checked locally: the scraper sends the combination matching the fewest posts and filters the results, so these searches work but take longer. The blacklist is also applied locally and doesn't count. `RULE34_USER_ID` (the number from the account page, not the username) and `RULE34_API_KEY` are required for Rule34, which allows 60 requests a minute. Its tag lookups go to Gelbooru first, in batches, and anything left is looked up on Rule34 one at a time, so its first runs are slow.
 
    Set `TZ` to your timezone, such as `America/Chicago`, to show times in it. Times are stored in UTC either way.
 
@@ -48,6 +47,14 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
    The app will be available at `http://localhost:8192`, and Postgres data persists to a Docker volume.
 
    This pulls the published image. To build your own from the source instead, run `docker compose up -d --build`.
+
+3. Set `APP_PASSWORD` in `.env`, or `ALLOW_SETTINGS_WITHOUT_LOGIN=true` if a login proxy or a trusted network already protects the app. Until then the Settings page is read-only. Then enter your Szurubooru and source details there.
+
+## Settings
+
+Everything except the database, login and encryption settings can be changed on the Settings page, and takes effect without a restart once any running scrape or check has finished. Any of them can also be set in `.env` under the name shown on the page. A value in `.env` takes priority and can't be changed from the page.
+
+Keys and tokens are encrypted in the database with `SETTINGS_KEY` and are never sent back to the browser. That protects a copy of the database on its own, so keep `.env` private. If the key is lost, the app still starts, and the page asks for those values again. Changing the Szurubooru URL requires entering the token again, so a saved token can't be sent to another server.
 
 ## When something's wrong
 
@@ -63,9 +70,9 @@ Yandere ignores bad credentials and answers as if you weren't logged in, so a wr
 
 ## Login
 
-Login is optional and off by default, so anyone who can reach the port can use the app until you turn it on. Set `APP_PASSWORD` in `.env` and restart to require a password. If the password contains a `$`, put it in single quotes.
+Login is optional and off by default, so anyone who can reach the port can use the app until you turn it on. Set `APP_PASSWORD` in `.env` and restart to require a password. Without one, settings stay read-only unless `ALLOW_SETTINGS_WITHOUT_LOGIN=true`, which turns off that protection: use it only with a login proxy and no directly published port, or on a network where you trust everyone. If the password contains a `$`, put it in single quotes.
 
-This is meant for a trusted network. Over plain HTTP, someone able to watch the traffic can read the password, and there's no MFA, so anything reachable from the internet should sit behind HTTPS and a proper auth proxy. If you already have an auth proxy, leave `APP_PASSWORD` empty and don't publish the app's port.
+This is meant for a trusted network. Over plain HTTP, someone able to watch the traffic can read the password, and there's no MFA, so anything reachable from the internet should sit behind HTTPS and a proper auth proxy. If you already have an auth proxy, leave `APP_PASSWORD` empty, set `ALLOW_SETTINGS_WITHOUT_LOGIN=true` and don't publish the app's port.
 
 - Once the app is served over HTTPS, set `COOKIE_SECURE=true`. Leave it off for plain HTTP, or browsers will refuse the login cookie.
 - Sessions last a week and live in memory, so a restart logs everyone out. Changing the password needs a restart, so it does too.
@@ -75,9 +82,9 @@ This is meant for a trusted network. Over plain HTTP, someone able to watch the 
 
 ## Notifications
 
-Notifications are optional and off until you add a service. Set `APPRISE_URLS` to one or more [Apprise URLs](https://appriseit.com/services/), separated by commas, such as `ntfys://my-topic,discord://webhook_id/webhook_token`. These URLs often hold tokens, so treat them like any other secret. An existing [Apprise API](https://github.com/caronc/apprise-api) server works too, through `apprise://host/key`.
+Notifications are optional and off until you add a service. In Settings, set `APPRISE_URLS` to one or more [Apprise URLs](https://appriseit.com/services/), separated by commas, such as `ntfys://my-topic,discord://webhook_id/webhook_token`. These URLs often hold tokens, so treat them like any other secret. An existing [Apprise API](https://github.com/caronc/apprise-api) server works too, through `apprise://host/key`.
 
-To send only some notifications, list them in `NOTIFY_ON`, separated by commas. Leave it empty for all of them.
+To send only some notifications, list them in `NOTIFY_ON` in Settings, separated by commas. Leave it empty for all of them.
 
 | Event | Sent when |
 | --- | --- |
@@ -139,7 +146,7 @@ Autogenerate misses some changes, such as renames, so check it. Write a `downgra
 
 Each source is one module in `app/sources/`. It implements `search_posts()` and `grab_tags()` from `base.py` (`grab_notes()` is optional), creates its `session` with `http.client()`, sets `post_page` (the URL of a post, saved as its source), and optionally `credentials` (required values, which grey it out in the UI if missing) and `search_hint` (shown under the Tags field). It also sets three maps: `ratings` (its ratings to `safe`/`sketchy`/`unsafe`), `rating_terms` (the reverse, as search terms) and `tag_categories` (its tag types to szurubooru categories, which are created on the booru if missing). `base.py` has paging helpers for the common API styles.
 
-Register it in `SOURCES` in `app/scrape.py` and it shows up in the UI's source dropdown. Add its credentials to `app/config.py` and `.env.example`; its rate limit is read from `<NAME>_RATE_LIMIT` through `config.rate_limit()`.
+Register it in `SOURCES` in `app/scrape.py` and it shows up in the UI's source dropdown. Add its credentials and `<NAME>_RATE_LIMIT` to `SETTINGS` in `app/config.py`, which puts them on the Settings page. The module builds its `session` in a `configure()` function, called on import and from `apply_settings()` in `app/scrape.py`, so changes apply without a restart.
 
 ## Recent changes
 

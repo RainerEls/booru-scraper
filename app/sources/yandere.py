@@ -11,14 +11,20 @@ from app.sources.base import PostTaggedSource, notes_to_markdown, pages_by_numbe
 logger = logging.getLogger(__name__)
 
 API_URL = "https://yande.re"
-RATE_LIMIT = config.rate_limit("YANDERE")
 PAGE_SIZE = 100
 
-session = http.client(
-    params={"login": config.YANDERE_USER_ID, "password_hash": config.YANDERE_PASSWORD_HASH}
-    if config.YANDERE_USER_ID
-    else None
-)
+
+def configure():
+    global RATE_LIMIT, session
+    RATE_LIMIT = config.rate_limit("YANDERE")
+    session = http.client(
+        params={"login": config.YANDERE_USER_ID, "password_hash": config.YANDERE_PASSWORD_HASH}
+        if config.YANDERE_USER_ID
+        else None
+    )
+
+
+configure()
 
 
 class YandereSource(PostTaggedSource):

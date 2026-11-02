@@ -28,6 +28,9 @@ class FakeServices:
     def close(self):
         self.closed = True
 
+    def clear(self):
+        self.sent.clear()
+
 
 @pytest.fixture
 def services(monkeypatch):

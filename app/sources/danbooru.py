@@ -12,7 +12,6 @@ from app.sources.base import PostTaggedSource, danbooru_style_pages, notes_to_ma
 logger = logging.getLogger(__name__)
 
 API_URL = "https://danbooru.donmai.us"
-RATE_LIMIT = config.rate_limit("DANBOORU")
 PAGE_SIZE = 200
 MAX_NUMBERED_PAGES = 1000
 POST_FIELDS = (
@@ -25,10 +24,17 @@ METATAG = re.compile(r"-?[a-z_]+:.", re.IGNORECASE)
 PAIR_CANDIDATES = 4
 SCAN_LOG_INTERVAL = 5000
 
-session = http.client(
-    headers={"User-Agent": "booru-scraper"},
-    auth=(config.DANBOORU_USER_ID, config.DANBOORU_API_KEY) if config.DANBOORU_USER_ID else None,
-)
+
+def configure():
+    global RATE_LIMIT, session
+    RATE_LIMIT = config.rate_limit("DANBOORU")
+    session = http.client(
+        headers={"User-Agent": "booru-scraper"},
+        auth=(config.DANBOORU_USER_ID, config.DANBOORU_API_KEY) if config.DANBOORU_USER_ID else None,
+    )
+
+
+configure()
 
 
 next_request = 0

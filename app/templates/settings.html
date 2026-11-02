@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Settings · Booru Scraper{% endblock %}
+
+{% block content %}
+{% if not editable %}
+<p class="page-alert" role="status">These settings are read-only because anyone who can reach this page could change them. Set <code>APP_PASSWORD</code> in <code>.env</code>, or <code>ALLOW_SETTINGS_WITHOUT_LOGIN=true</code> if a login proxy or a trusted network already protects the app, and restart.</p>
+{% elif not has_key %}
+<p class="page-alert" role="status">Keys and tokens can't be saved here until <code>SETTINGS_KEY</code> is set in <code>.env</code>. Generate one with <code>openssl rand -hex 32</code> and restart.</p>
+{% endif %}
+
+<form id="settings-form">
+  {% for group, fields in groups.items() %}
+  <div class="section-head"><h2 class="display">{{ group }}</h2><div class="rule"></div></div>
+  <div class="card settings-grid">
+    {% for field in fields %}
+    {% set setting = field.setting %}
+    <div class="form-group">
+      <label for="{{ setting.name }}">{{ setting.label }}</label>
+      <input
+        type="{{ 'password' if setting.secret else 'text' }}"
+        id="{{ setting.name }}"
+        name="{{ setting.name }}"
+        value="{{ field.value }}"
+        autocomplete="{{ 'new-password' if setting.secret else 'off' }}"
+        {% if setting.secret %}data-secret{% if field.is_set %} placeholder="Saved. Type to replace it."{% endif %}{% endif %}
+        {% if field.from_env or not editable or (setting.secret and not has_key) %}disabled{% endif %}
+      >
+      <span class="field-hint">
+        <code>{{ setting.name }}</code>
+        {% if field.from_env %}Set in <code>.env</code>, which takes priority.{% endif %}
+        {% if field.unreadable %}<strong>The saved value can't be decrypted with this <code>SETTINGS_KEY</code>. Enter it again.</strong>{% endif %}
+        {{ setting.hint }}
+      </span>
+      {% if setting.secret and field.is_set and not field.from_env and editable %}
+      <label class="settings-clear"><input type="checkbox" data-clear="{{ setting.name }}"> Remove saved value</label>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% if editable %}
+  <div class="form-actions settings-actions">
+    <button type="submit" class="btn btn--primary">Save</button>
+    <span class="field-hint" id="settings-status" role="status"></span>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const form = document.getElementById('settings-form');
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const inputs = [...form.querySelectorAll('input[name]:not(:disabled)')];
+    const changed = inputs.filter(input => input.value !== input.defaultValue);
+    const body = {
+      values: Object.fromEntries(changed.map(input => [input.name, input.value])),
+      cleared: [...form.querySelectorAll('[data-clear]:checked')].map(box => box.dataset.clear),
+    };
+    const res = await apiCall('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res) location.reload();
+    else window.scrollTo(0, 0);
+  });
+</script>
+{% endblock %}

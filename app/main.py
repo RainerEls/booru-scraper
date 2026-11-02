@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from app import auth, config, db, http, integrity, notify, scrape
+from app import auth, config, db, http, integrity, scrape, settings
 from app.scrape import SOURCES, Job, ScrapeSpec, active_jobs, jobs, next_run, start_job, start_schedule
 
 logger = logging.getLogger(__name__)
@@ -30,8 +30,9 @@ logging.getLogger("uvicorn.access").addFilter(HideHealthChecks())
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.validate()
-    notify.setup()
     await db.migrate()
+    await settings.load()
+    await scrape.apply_settings()
     await db.release_stale_claims()
     await db.mark_interrupted_work()
     scheduler = asyncio.create_task(scrape.run_schedules())
@@ -58,6 +59,11 @@ class NewSchedule(Scrape):
 
 class ScheduleState(BaseModel):
     enabled: bool
+
+
+class SettingsChange(BaseModel):
+    values: dict[str, str] = {}
+    cleared: list[str] = []
 
 
 app = FastAPI(lifespan=lifespan)
@@ -230,14 +236,42 @@ async def scrape_progress(job: Annotated[Job, Depends(get_job)]):
         await job.updated.wait()
 
 
+def settings_editable():
+    return auth.enabled() or config.ALLOW_SETTINGS_WITHOUT_LOGIN
+
+
+@app.get("/settings", response_class=HTMLResponse)
+async def show_settings(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context={"groups": settings.view(), "editable": settings_editable(), "has_key": bool(config.SETTINGS_KEY)},
+    )
+
+
+@app.post("/api/settings", status_code=204)
+async def save_settings(request: Request, change: SettingsChange):
+    if not auth.same_origin(request):
+        raise HTTPException(status_code=403, detail="Cross-site request refused")
+    if not settings_editable():
+        raise HTTPException(status_code=403, detail="Settings are read-only without a login")
+    if active_jobs() or check_busy(await db.get_checks()):
+        raise HTTPException(status_code=409, detail="Wait for the running scrape or check to finish")
+    try:
+        await settings.save(change.values, change.cleared)
+    except settings.Invalid as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    await scrape.apply_settings()
+
+
 def require_szurubooru():
     if missing := config.missing_szurubooru():
-        raise HTTPException(status_code=422, detail=f"Set {', '.join(missing)} in .env first")
+        raise HTTPException(status_code=422, detail=f"Set {', '.join(missing)} in Settings first")
 
 
 def require_configured(source):
     if source not in SOURCES or not SOURCES[source].configured:
-        raise HTTPException(status_code=422, detail=f"{source} needs its credentials in .env")
+        raise HTTPException(status_code=422, detail=f"{source} needs its credentials in Settings")
 
 
 @app.post("/scrape")

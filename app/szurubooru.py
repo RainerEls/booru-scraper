@@ -8,30 +8,36 @@ from app import config, http
 from app.http import REJECTED_STATUSES, ApiError, SetupProblem, api_get
 from app.sources.base import MAX_SOURCE_LENGTH
 
-RATE_LIMIT = config.rate_limit("SZURUBOORU")
-BASE_URL = config.SZURUBOORU_BASE_URL
 PAGE_SIZE = 100
 UPLOAD_TIMEOUT = 300.0
 
-_token = base64.b64encode(f"{config.SZURUBOORU_USER_ID}:{config.SZURUBOORU_API_TOKEN}".encode()).decode()
-session = http.client(
-    headers={"Authorization": f"Token {_token}", "Content-Type": "application/json", "Accept": "application/json"},
-    timeout=30.0,
-)
+
+def configure():
+    global RATE_LIMIT, BASE_URL, session
+    RATE_LIMIT = config.rate_limit("SZURUBOORU")
+    BASE_URL = config.SZURUBOORU_BASE_URL
+    token = base64.b64encode(f"{config.SZURUBOORU_USER_ID}:{config.SZURUBOORU_API_TOKEN}".encode()).decode()
+    session = http.client(
+        headers={"Authorization": f"Token {token}", "Content-Type": "application/json", "Accept": "application/json"},
+        timeout=30.0,
+    )
+
+
+configure()
 
 
 async def check_connection():
     if missing := config.missing_szurubooru():
-        raise SetupProblem(f"Szurubooru isn't set up. Set {', '.join(missing)} in .env.")
+        raise SetupProblem(f"Szurubooru isn't set up. Set {', '.join(missing)} in Settings.")
     try:
         r = await api_get(session, f"{BASE_URL}/info")
         r.json()["config"]
     except ApiError as e:
         raise SetupProblem(
-            f"Szurubooru answered HTTP {e.status}. Check SZURUBOORU_BASE_URL and SZURUBOORU_USER_ID in .env."
+            f"Szurubooru answered HTTP {e.status}. Check SZURUBOORU_BASE_URL and SZURUBOORU_USER_ID in Settings."
         ) from e
     except httpx.TransportError as e:
-        raise SetupProblem(f"Could not reach szurubooru at {BASE_URL}. Check SZURUBOORU_BASE_URL in .env.") from e
+        raise SetupProblem(f"Could not reach szurubooru at {BASE_URL}. Check SZURUBOORU_BASE_URL in Settings.") from e
     except (ValueError, LookupError, TypeError) as e:
         raise SetupProblem(
             f"{BASE_URL} doesn't look like the szurubooru API. SZURUBOORU_BASE_URL should end in /api."
