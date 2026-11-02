@@ -31,6 +31,33 @@ def use_danbooru(monkeypatch, handler):
     monkeypatch.setattr(danbooru, "session", mock_client(handler))
 
 
+def test_requests_are_paced_from_when_each_one_starts(monkeypatch):
+    clock = [100.0]
+    waits = []
+
+    async def sleep(seconds):
+        waits.append(seconds)
+        clock[0] += seconds
+
+    def handler(request):
+        clock[0] += 0.25
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setattr(danbooru.asyncio, "sleep", sleep)
+    monkeypatch.setattr(danbooru.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(danbooru, "next_request", 0)
+    monkeypatch.setattr(danbooru, "RATE_LIMIT", 1)
+    use_danbooru(monkeypatch, handler)
+
+    async def run():
+        for _ in range(3):
+            await danbooru.paced_get("posts.json", {})
+
+    asyncio.run(run())
+
+    assert waits == [0, 0.75, 0.75]
+
+
 def test_search_pages_by_id_and_normalises_posts(monkeypatch):
     requests = []
 
