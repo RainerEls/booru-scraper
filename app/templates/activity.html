@@ -15,18 +15,18 @@
 <p class="section-note">Compares every post this app uploaded with what's on szurubooru. A check changes nothing; only Re-pull does, and it never touches deleted or merged posts.</p>
 
 {% if checks %}
-<div class="card card--flush">
+<div class="card card--flush" role="region" aria-label="Integrity checks" tabindex="0">
   <table class="history-table">
     <thead>
       <tr>
-        <th>Time</th>
-        <th class="num">Intact</th>
-        <th class="num">Missing</th>
-        <th class="num">Damaged</th>
-        <th class="num">Unverified</th>
-        <th class="num">Deleted</th>
-        <th class="num">Merged</th>
-        <th>Status</th>
+        <th scope="col">Time</th>
+        <th scope="col" class="num">Intact</th>
+        <th scope="col" class="num">Missing</th>
+        <th scope="col" class="num">Damaged</th>
+        <th scope="col" class="num">Unverified</th>
+        <th scope="col" class="num">Deleted</th>
+        <th scope="col" class="num">Merged</th>
+        <th scope="col">Status</th>
       </tr>
     </thead>
     <tbody>
@@ -63,7 +63,7 @@
               <li>
                 <span class="status-badge status-badge--{{ 'error' if issue.kind in repullable else 'skipped' }}">{{ issue.kind }}</span>
                 {{ issue.source }} {{ issue.source_post_id }}, booru post {{ issue.booru_post_id }}: {{ issue.detail }}
-                <a href="{{ issue.image_url }}" rel="noreferrer">source file</a>
+                <a href="{{ issue.image_url }}" rel="noreferrer" aria-label="Source file for {{ issue.source }} post {{ issue.source_post_id }}">source file</a>
                 {% if issue.repull %}<strong class="check-repull">{{ issue.repull }}</strong>{% endif %}
               </li>
               {% endfor %}
@@ -88,22 +88,22 @@
 </div>
 
 {% if runs %}
-<div class="card card--flush">
+<div class="card card--flush" role="region" aria-label="Scrape runs" tabindex="0">
   <table class="history-table">
     <thead>
       <tr>
-        <th>Time</th>
-        <th>Source</th>
-        <th>Rating</th>
-        <th>Tags</th>
-        <th>Blacklisted</th>
-        <th>Limit</th>
-        <th class="num">Total</th>
-        <th class="num">Uploaded</th>
-        <th class="num">Skipped</th>
-        <th class="num">Failed</th>
-        <th class="num">Took</th>
-        <th>Status</th>
+        <th scope="col">Time</th>
+        <th scope="col">Source</th>
+        <th scope="col">Rating</th>
+        <th scope="col">Tags</th>
+        <th scope="col">Blacklisted</th>
+        <th scope="col">Limit</th>
+        <th scope="col" class="num">Total</th>
+        <th scope="col" class="num">Uploaded</th>
+        <th scope="col" class="num">Skipped</th>
+        <th scope="col" class="num">Failed</th>
+        <th scope="col" class="num">Took</th>
+        <th scope="col">Status</th>
       </tr>
     </thead>
     <tbody>
@@ -130,16 +130,16 @@
           {% if run.log %}
           <details>
             <summary>Log ({{ run.log | length }} lines)</summary>
-            <div class="log log--run">
+            <div class="log log--run" tabindex="0">
               {% for line in run.log %}<div class="log-line log-line--{{ line.level }}">{{ line.message }}</div>{% endfor %}
             </div>
           </details>
           {% endif %}
           {% if run.failed_posts %}
-          <button type="button" class="btn btn--primary run-action" data-url="/api/runs/{{ run.id }}/retry">Retry {{ run.failed_posts | length }} failed post(s)</button>
+          <button type="button" class="btn btn--primary run-action" data-url="/api/runs/{{ run.id }}/retry" aria-label="Retry {{ run.failed_posts | length }} failed post(s) from {{ run.source }} {{ run.tags or 'all posts' }}">Retry {{ run.failed_posts | length }} failed post(s)</button>
           {% endif %}
           {% if run is repeatable %}
-          <button type="button" class="btn btn--secondary run-action" data-url="/api/runs/{{ run.id }}/again">Run again</button>
+          <button type="button" class="btn btn--secondary run-action" data-url="/api/runs/{{ run.id }}/again" aria-label="Run again: {{ run.source }} {{ run.tags or 'all posts' }}">Run again</button>
           {% endif %}
         </td>
       </tr>

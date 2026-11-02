@@ -6,9 +6,9 @@
 <form class="card login-card" method="post" action="/login">
   <div class="form-group">
     <label for="password">Password</label>
-    <input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
+    <input type="password" id="password" name="password" autocomplete="current-password" required autofocus {% if error %}aria-describedby="login-error" aria-invalid="true"{% endif %}>
   </div>
-  {% if error %}<p class="login-error">{{ error }}</p>{% endif %}
+  {% if error %}<p class="login-error" id="login-error" role="alert">{{ error }}</p>{% endif %}
   <div class="form-actions">
     <button type="submit" class="btn btn--primary">Log in</button>
   </div>
