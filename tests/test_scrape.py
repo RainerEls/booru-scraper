@@ -716,3 +716,30 @@ def test_a_post_szurubooru_already_has_is_merged_into_that_post(monkeypatch, fak
     assert sent == [{"version": 3, "tags": ["cat", "dog"], "source": "http://fake.test/1"}]
     assert fake_db.posts[("fake", 1)]["status"] == "merged"
     assert job.counters["skipped"] == 1
+
+
+def test_run_again_repeats_the_same_search(monkeypatch):
+    run = SimpleNamespace(
+        source="gelbooru",
+        tags="cat",
+        blacklist_tags="dog",
+        rating="safe",
+        post_limit=20,
+        retry_of=None,
+    )
+    specs = []
+
+    async def get_run(id):
+        return run if id == 1 else None
+
+    monkeypatch.setattr(main.db, "get_run", get_run)
+    monkeypatch.setattr(main, "start_job", lambda spec: specs.append(spec) or "job")
+    monkeypatch.setattr(main.SOURCES["gelbooru"], "credentials", ("x",), raising=False)
+    client = TestClient(main.app)
+
+    assert client.post("/api/runs/2/again").status_code == 404
+    assert client.post("/api/runs/1/again").json() == {"job_id": "job"}
+    assert specs == [main.ScrapeSpec("gelbooru", 20, "cat", "dog", "safe")]
+
+    run.retry_of = 7
+    assert client.post("/api/runs/1/again").status_code == 404

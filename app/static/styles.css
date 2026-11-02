@@ -327,5 +327,5 @@ select { cursor: pointer; appearance: none;
 .check-issues { list-style: none; margin-top: 8px; overflow-wrap: anywhere; }
 .check-issues li { padding: 4px 0; }
 .log--run { margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; }
-.retry-btn { margin-top: 10px; }
+.run-action { margin-top: 10px; padding: 4px 10px; font-size: 12px; }
 .check-repull { margin-left: 6px; color: var(--text-2); font-weight: 500; }

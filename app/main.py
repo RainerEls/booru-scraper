@@ -136,6 +136,7 @@ class ScrapeSpec:
     post_ids: list | None = None
     schedule_id: int | None = None
     stop_after_known: int | None = None
+    retry_of: int | None = None
 
 
 class Scrape(BaseModel):
@@ -179,6 +180,11 @@ def local_time(moment):
     return moment.replace(tzinfo=UTC).astimezone().strftime("%Y-%m-%d %H:%M")
 
 
+def repeatable(run):
+    return bool(run.post_limit) and run.retry_of is None
+
+
+templates.env.tests["repeatable"] = repeatable
 templates.env.filters["duration"] = duration
 templates.env.filters["local_time"] = local_time
 templates.env.filters["next_run"] = next_run
@@ -358,7 +364,15 @@ async def run_scrape(run_id, job, spec):
 
     try:
         run = await db.create_run(
-            run_id, spec.source, spec.tags, spec.blacklist_tags, spec.rating, spec.limit, "running", spec.schedule_id
+            run_id,
+            spec.source,
+            spec.tags,
+            spec.blacklist_tags,
+            spec.rating,
+            spec.limit,
+            "running",
+            spec.schedule_id,
+            spec.retry_of,
         )
         run_log.set(job.log)
         if source.slow_tag_lookup and await db.count_tags() < FEW_KNOWN_TAGS:
@@ -552,6 +566,23 @@ async def retry_run(run_id: int):
         limit=len(run.failed_posts),
         tags=f"Retry of run {run_id}",
         post_ids=run.failed_posts,
+        retry_of=run_id,
+    )
+    return {"job_id": start_job(spec)}
+
+
+@app.post("/api/runs/{run_id}/again")
+async def run_again(run_id: int):
+    run = await db.get_run(run_id)
+    if run is None or not repeatable(run):
+        raise HTTPException(status_code=404, detail="That run can't be repeated")
+    require_configured(run.source)
+    spec = ScrapeSpec(
+        source=run.source,
+        limit=run.post_limit,
+        tags=run.tags or "",
+        blacklist_tags=run.blacklist_tags or "",
+        rating=run.rating,
     )
     return {"job_id": start_job(spec)}
 
