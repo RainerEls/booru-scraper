@@ -41,6 +41,20 @@ jobs:
           docker run --rm -e DB_USER=ci -e DB_PASS=ci -e DB_HOST=ci -e DB_PORT=5432 -e DB_NAME=ci
           "booru-scraper:ci-$GITHUB_SHA" /venv/bin/python -c "import app.main"
 
+      - name: Check the migrations
+        run: |
+          docker network create "booru-ci-$GITHUB_SHA"
+          docker run -d --name "booru-ci-db-$GITHUB_SHA" --network "booru-ci-$GITHUB_SHA" --network-alias db \
+            -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=ci postgres:18
+          until docker exec "booru-ci-db-$GITHUB_SHA" pg_isready -U ci -d ci -h localhost; do sleep 1; done
+          docker run --rm --network "booru-ci-$GITHUB_SHA" \
+            -e DB_USER=ci -e DB_PASS=ci -e DB_HOST=db -e DB_PORT=5432 -e DB_NAME=ci \
+            "booru-scraper:ci-$GITHUB_SHA" sh -c \
+            "alembic upgrade head && alembic check && alembic downgrade base && alembic upgrade head && alembic check"
+
       - name: Remove the image
         if: always()
-        run: docker rmi "booru-scraper:ci-$GITHUB_SHA"
+        run: |
+          docker rm -f "booru-ci-db-$GITHUB_SHA" || true
+          docker network rm "booru-ci-$GITHUB_SHA" || true
+          docker rmi "booru-scraper:ci-$GITHUB_SHA"

@@ -38,6 +38,19 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
 
    The app will be available at `http://localhost:8192`, and Postgres data persists to a Docker volume.
 
+## Upgrading
+
+Pull the new version and restart it. The app brings the database up to date when it starts, including databases from versions older than the migrations, and refuses to start if a migration fails.
+
+To go back to an older version, undo its schema changes first, while the newer version is still installed:
+
+```bash
+docker compose exec booru-scraper alembic history
+docker compose exec booru-scraper alembic downgrade <revision the older version shipped>
+```
+
+Then switch versions. Downgrades keep your data, except for what a column being dropped held.
+
 ## Running locally without Docker
 
 ```bash
@@ -56,6 +69,16 @@ pip install -r requirements-dev.txt
 ruff check app tests
 pytest
 ```
+
+## Changing the schema
+
+Change the models in `app/db.py`, then generate a migration against a database that's up to date and read what it wrote:
+
+```bash
+alembic revision --autogenerate -m "describe the change"
+```
+
+Autogenerate misses some changes, such as renames, so check it. Write a `downgrade()` too. CI runs every migration up and back down, and fails if the migrations don't match the models.
 
 ## Adding a source
 

@@ -73,7 +73,7 @@ class Job:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.validate()
-    await db.init_db()
+    await db.migrate()
     await db.release_stale_claims()
     await db.fail_interrupted_runs()
 
