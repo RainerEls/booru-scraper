@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from app import config, db, http, integrity, szurubooru
+from app import config, db, http, integrity, notify, szurubooru
 from app.db import utcnow
 from app.http import run_log
 from app.sources.danbooru import DanbooruSource
@@ -110,6 +110,7 @@ class Job:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.validate()
+    notify.setup()
     await db.migrate()
     await db.release_stale_claims()
     await db.mark_interrupted_work()
@@ -295,6 +296,31 @@ def report_failures(job):
         job.log("warning", f"    tags: {failure['tags']}")
 
 
+def run_event(job, spec):
+    if job.status == "stopped":
+        return None
+    if job.status == "interrupted":
+        return "scrape_interrupted"
+    if job.status == "error" or job.failures:
+        return "scrape_failed"
+    if spec.schedule_id is None:
+        return "scrape_finished"
+    return "schedule_finished" if job.counters["processed"] else None
+
+
+async def notify_run(job, spec):
+    event = run_event(job, spec)
+    if event is None:
+        return
+    counters = job.counters
+    lines = [
+        f"{spec.source}: {spec.tags or 'all posts'}",
+        f"Uploaded {counters['processed']}, skipped {counters['skipped']}, failed {counters['failed']}",
+    ]
+    lines += [line["message"] for line in job.lines if line["level"] == "error"][:1]
+    await notify.send(event, "\n".join(lines))
+
+
 async def run_scrape(run_id, job, spec):
     source = SOURCES[spec.source]
     new_posts = []
@@ -344,6 +370,7 @@ async def run_scrape(run_id, job, spec):
                 failed_posts=[failure["id"] for failure in job.failures],
             )
         job.finish()
+        await notify_run(job, spec)
 
 
 def check_busy(checks):

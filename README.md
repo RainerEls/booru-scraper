@@ -15,6 +15,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 - Run history stored in Postgres, with each run's log and a button to retry the posts that failed
 - Saved searches that run on a schedule, one at a time. Each picks up what's new and stops after 100 known posts in a row, so it doesn't crawl a whole tag every run
 - A stop button for a running scrape, which keeps the tags synced so far
+- Optional notifications through Apprise, with a choice of which events to send
 - A restart saves the log of any running scrape and marks it interrupted
 - `BLACKLIST_TAGS` in `.env` applies a blacklist to every scrape, on top of the one in the form
 - Integrity checks that compare uploaded posts with what's on szurubooru, telling deliberately deleted or merged posts apart from ones that went missing. They only report, with a separate re-pull button for posts that are missing or damaged, which never touches deleted or merged ones
@@ -43,6 +44,22 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
    ```
 
    The app will be available at `http://localhost:8192`, and Postgres data persists to a Docker volume.
+
+## Notifications
+
+Notifications are optional and off until you add a service. Set `APPRISE_URLS` to one or more [Apprise URLs](https://appriseit.com/services/), separated by commas, such as `ntfys://my-topic,discord://webhook_id/webhook_token`. These URLs often hold tokens, so treat them like any other secret. An existing [Apprise API](https://github.com/caronc/apprise-api) server works too, through `apprise://host/key`.
+
+To send only some notifications, list them in `NOTIFY_ON`, separated by commas. Leave it empty for all of them.
+
+| Event | Sent when |
+| --- | --- |
+| `scrape_finished` | A scrape you started finishes without problems |
+| `schedule_finished` | A scheduled scrape uploads new posts. Runs that find nothing new stay silent |
+| `scrape_failed` | Any scrape hits an error or fails to upload a post |
+| `scrape_interrupted` | A restart cuts a scrape short |
+| `integrity_problems` | An integrity check finds missing or damaged posts, or can't finish |
+
+Stopping a scrape yourself sends nothing. A failed notification is logged and never affects the scrape.
 
 ## Health check
 
