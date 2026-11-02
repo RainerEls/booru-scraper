@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 import re
+import time
 from itertools import combinations
 
 from app import config, http
@@ -30,11 +31,21 @@ session = http.client(
 )
 
 
+next_request = 0
+
+
+async def paced_get(path, params):
+    global next_request
+    now = time.monotonic()
+    wait = max(0, next_request - now)
+    next_request = now + wait + RATE_LIMIT
+    await asyncio.sleep(wait)
+    return await api_get(session, f"{API_URL}/{path}", params)
+
+
 async def fetch_page(terms, page):
     try:
-        r = await api_get(
-            session, f"{API_URL}/posts.json", {"tags": " ".join(terms), "limit": PAGE_SIZE, "page": page, "only": POST_FIELDS}
-        )
+        r = await paced_get("posts.json", {"tags": " ".join(terms), "limit": PAGE_SIZE, "page": page, "only": POST_FIELDS})
     except ApiError as e:
         if e.status == 422:
             raise RuntimeError(
@@ -52,14 +63,13 @@ async def fetch_page(terms, page):
 
 
 async def tag_limit():
-    r = await api_get(session, f"{API_URL}/profile.json", {"only": "tag_query_limit"})
+    r = await paced_get("profile.json", {"only": "tag_query_limit"})
     return r.json()["tag_query_limit"]
 
 
 async def canonical_names(names):
-    r = await api_get(
-        session,
-        f"{API_URL}/tag_aliases.json",
+    r = await paced_get(
+        "tag_aliases.json",
         {
             "search[antecedent_name_comma]": ",".join(names),
             "search[status]": "active",
@@ -72,8 +82,7 @@ async def canonical_names(names):
 
 
 async def pair_size(pair):
-    await asyncio.sleep(RATE_LIMIT)
-    r = await api_get(session, f"{API_URL}/counts/posts.json", {"tags": " ".join(pair)})
+    r = await paced_get("counts/posts.json", {"tags": " ".join(pair)})
     count = r.json()["counts"]["posts"]
     # Danbooru answers null when a search is too big to count.
     return math.inf if count is None else count
@@ -83,12 +92,7 @@ async def narrowest_tags(tags, slots):
     """Pick the tags to send, and how many posts they match, or None if that isn't known."""
     if not tags or not slots:
         return [], None
-    await asyncio.sleep(RATE_LIMIT)
-    r = await api_get(
-        session,
-        f"{API_URL}/tags.json",
-        {"search[name_comma]": ",".join(tags), "limit": len(tags), "only": "name,post_count"},
-    )
+    r = await paced_get("tags.json", {"search[name_comma]": ",".join(tags), "limit": len(tags), "only": "name,post_count"})
     counts = {tag["name"]: tag["post_count"] for tag in r.json()}
     rarest = sorted(tags, key=lambda tag: counts.get(tag, 0))
     if slots != 2 or len(tags) < 2:
@@ -146,7 +150,7 @@ class DanbooruSource(PostTaggedSource):
         logger.debug(terms)
         scanned = matched = 0
 
-        async for post in danbooru_style_pages(fetch_page, terms, PAGE_SIZE, MAX_NUMBERED_PAGES, RATE_LIMIT):
+        async for post in danbooru_style_pages(fetch_page, terms, PAGE_SIZE, MAX_NUMBERED_PAGES, 0):
             scanned += 1
             if required and scanned % SCAN_LOG_INTERVAL == 0:
                 run_log.get()("info", f"Scanned {scanned} Danbooru posts, {matched} matched")
@@ -169,6 +173,5 @@ class DanbooruSource(PostTaggedSource):
     async def grab_notes(self, post):
         if not post.get("last_noted_at"):
             return None
-        await asyncio.sleep(RATE_LIMIT)
-        r = await api_get(session, f"{API_URL}/notes.json", {"search[post_id]": post["id"]})
+        r = await paced_get("notes.json", {"search[post_id]": post["id"]})
         return notes_to_markdown(r.json())
