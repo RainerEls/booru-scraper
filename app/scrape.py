@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 
-import httpx
+import httpx2
 
 from app import config, db, http, notify, szurubooru
 from app.db import utcnow
@@ -132,7 +132,7 @@ def response_json(r):
 async def merge_uploaded_post(job, source, db_entry, post, other_post):
     try:
         await szurubooru.merge_into_post(other_post, post["tags"].split(), source.source_links(post))
-    except (httpx.HTTPError, CredentialsRejected) as e:
+    except (httpx2.HTTPError, CredentialsRejected) as e:
         if not forbidden(e):
             raise
         job.warn_once(NO_POST_EDITS)
@@ -236,7 +236,7 @@ async def sync_unknown_tags(job, source, posts):
     async for tag in source.grab_tags(unknown_tags):
         try:
             await szurubooru.sync_tag(tag["name"], tag["category"])
-        except httpx.HTTPError as e:
+        except httpx2.HTTPError as e:
             if not forbidden(e):
                 job.log("warning", f"Tag {tag['name']} failed to sync: {describe(e)}")
             elif e.request.method == "PUT":
@@ -276,7 +276,7 @@ async def merge_duplicates(job, source, duplicates):
             continue
         try:
             await merge_duplicate(job, source, db_entry, post, booru_post)
-        except (httpx.HTTPError, CredentialsRejected) as e:
+        except (httpx2.HTTPError, CredentialsRejected) as e:
             if forbidden(e):
                 job.warn_once(NO_POST_EDITS)
                 return
@@ -366,7 +366,7 @@ async def run_scrape(run_id, job, spec):
             )
         try:
             await szurubooru.ensure_tag_categories(source.tag_categories.values())
-        except (httpx.HTTPError, CredentialsRejected) as e:
+        except (httpx2.HTTPError, CredentialsRejected) as e:
             if forbidden(e):
                 job.log("warning", "The szurubooru account can't manage tag categories, so missing ones won't be created.")
             else:

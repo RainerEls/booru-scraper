@@ -6,7 +6,7 @@ import math
 import xml.etree.ElementTree as ET
 from functools import partial
 
-import httpx
+import httpx2
 
 from app import config, http
 from app.http import CredentialsRejected, api_get, describe, run_log
@@ -78,13 +78,13 @@ class Rule34Source(BooruSource):
             for tag in remaining:
                 yield {"name": tag, "category": await self.category(tag)}
                 await asyncio.sleep(RATE_LIMIT)
-        except httpx.HTTPError as e:
+        except httpx2.HTTPError as e:
             run_log.get()("warning", f"Tag lookup stopped, a later run will finish it: {describe(e)}")
 
     async def tags_known_to_gelbooru(self, tags):
         try:
             known = [tag async for tag in GelbooruSource().grab_tags(tags)]
-        except (httpx.HTTPError, ValueError, CredentialsRejected) as e:
+        except (httpx2.HTTPError, ValueError, CredentialsRejected) as e:
             run_log.get()("warning", f"Could not ask Gelbooru about tags: {describe(e)}")
             return []
         return [tag for tag in known if tag["name"] in tags]

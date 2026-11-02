@@ -1,6 +1,6 @@
 import asyncio
 
-import httpx
+import httpx2
 import pytest
 
 from app import http
@@ -28,7 +28,7 @@ def get(responses, notices=None):
     async def run():
         if notices is not None:
             http.run_log.set(lambda level, message: notices.append(message))
-        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
         return await http.api_get(client, "http://source.test/api", {"api_key": "secret-key"})
 
     return asyncio.run(run())
@@ -36,7 +36,7 @@ def get(responses, notices=None):
 
 def test_backs_off_exponentially_until_a_request_succeeds(waits):
     notices = []
-    responses = [httpx.Response(429), httpx.Response(503), httpx.ConnectError("down"), httpx.Response(200)]
+    responses = [httpx2.Response(429), httpx2.Response(503), httpx2.ConnectError("down"), httpx2.Response(200)]
 
     assert get(responses, notices).status_code == 200
     assert waits == [5, 10, 20]
@@ -45,13 +45,13 @@ def test_backs_off_exponentially_until_a_request_succeeds(waits):
 
 
 def test_honours_retry_after(waits):
-    assert get([httpx.Response(429, headers={"Retry-After": "7"}), httpx.Response(200)]).status_code == 200
+    assert get([httpx2.Response(429, headers={"Retry-After": "7"}), httpx2.Response(200)]).status_code == 200
     assert waits == [7]
 
 
 def test_gives_up_after_the_last_attempt(waits):
     with pytest.raises(http.ApiError) as e:
-        get([httpx.Response(429) for _ in range(5)])
+        get([httpx2.Response(429) for _ in range(5)])
 
     assert waits == [5, 10, 20, 40]
     assert "HTTP 429" in str(e.value)
@@ -59,12 +59,12 @@ def test_gives_up_after_the_last_attempt(waits):
 
 
 def test_connection_errors_surface_after_the_last_attempt(waits):
-    with pytest.raises(httpx.ConnectError):
-        get([httpx.ConnectError("down") for _ in range(5)])
+    with pytest.raises(httpx2.ConnectError):
+        get([httpx2.ConnectError("down") for _ in range(5)])
 
 
 def test_other_client_errors_are_not_retried(waits):
     with pytest.raises(http.ApiError):
-        get([httpx.Response(404)])
+        get([httpx2.Response(404)])
 
     assert waits == []

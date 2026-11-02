@@ -16,7 +16,7 @@ from app.scrape import SOURCES, Job, ScrapeSpec, active_jobs, jobs, next_run, st
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.getLevelName(config.LOGLEVEL))
-logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 
 class HideHealthChecks(logging.Filter):

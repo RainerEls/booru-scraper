@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-import httpx
+import httpx2
 import pytest
 from helpers import collect, mock_client, tags_of
 
@@ -29,9 +29,9 @@ def gelbooru_with_posts(count, requests):
         below = next((int(t[4:]) for t in tags.split() if t.startswith("id:<")), newest + 1)
         offset = int(request.url.params["pid"]) * 100
         if offset > 20_000:
-            return httpx.Response(200, text="Too deep! Pull it back some.")
+            return httpx2.Response(200, text="Too deep! Pull it back some.")
         ids = range(below - 1 - offset, max(below - 1 - offset - 100, 0), -1)
-        return httpx.Response(200, json={"post": [post(id) for id in ids]})
+        return httpx2.Response(200, json={"post": [post(id) for id in ids]})
 
     return handler
 
@@ -92,8 +92,8 @@ def gelbooru_with_scores(scores):
             matches = sorted(matches, key=lambda p: -p["id"])
         offset = int(request.url.params["pid"]) * 100
         if offset > 200:
-            return httpx.Response(200, text="Too deep! Pull it back some.")
-        return httpx.Response(200, json={"post": matches[offset : offset + 100]})
+            return httpx2.Response(200, text="Too deep! Pull it back some.")
+        return httpx2.Response(200, json={"post": matches[offset : offset + 100]})
 
     return handler
 
@@ -139,7 +139,7 @@ def test_requests_do_not_log_the_api_key(monkeypatch, caplog):
     import app.main  # noqa: F401
 
     def handler(request):
-        return httpx.Response(200, json={"@attributes": {"count": 0}})
+        return httpx2.Response(200, json={"@attributes": {"count": 0}})
 
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     with caplog.at_level(logging.INFO):
@@ -150,7 +150,7 @@ def test_requests_do_not_log_the_api_key(monkeypatch, caplog):
 
 def test_tag_lookup_with_no_matches_returns_nothing(monkeypatch):
     def handler(request):
-        return httpx.Response(200, json={"@attributes": {"count": 0}})
+        return httpx2.Response(200, json={"@attributes": {"count": 0}})
 
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     assert tags_of(GelbooruSource(), {"unknown"}) == []
@@ -158,7 +158,7 @@ def test_tag_lookup_with_no_matches_returns_nothing(monkeypatch):
 
 def test_http_errors_do_not_expose_the_api_key(monkeypatch):
     def handler(request):
-        return httpx.Response(429)
+        return httpx2.Response(429)
 
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     with pytest.raises(ApiError) as e:
@@ -173,7 +173,7 @@ def test_search_stops_after_a_short_page(monkeypatch):
 
     def handler(request):
         pages.append(request.url.params["pid"])
-        return httpx.Response(200, json={"post": [post(1)]})
+        return httpx2.Response(200, json={"post": [post(1)]})
 
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     assert len(collect(GelbooruSource(), 100)) == 1
@@ -182,7 +182,7 @@ def test_search_stops_after_a_short_page(monkeypatch):
 
 def test_notes_are_only_requested_for_posts_that_have_them(monkeypatch):
     def handler(request):
-        return httpx.Response(200, text='<notes><note x="1" y="2" width="3" height="4" body="hi"/></notes>')
+        return httpx2.Response(200, text='<notes><note x="1" y="2" width="3" height="4" body="hi"/></notes>')
 
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
     source = GelbooruSource()

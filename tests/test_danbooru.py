@@ -1,6 +1,6 @@
 import asyncio
 
-import httpx
+import httpx2
 import pytest
 from helpers import collect, mock_client, tags_of
 
@@ -41,7 +41,7 @@ def test_requests_are_paced_from_when_each_one_starts(monkeypatch):
 
     def handler(request):
         clock[0] += 0.25
-        return httpx.Response(200, json=[])
+        return httpx2.Response(200, json=[])
 
     monkeypatch.setattr(danbooru.asyncio, "sleep", sleep)
     monkeypatch.setattr(danbooru.time, "monotonic", lambda: clock[0])
@@ -64,8 +64,8 @@ def test_search_pages_by_id_and_normalises_posts(monkeypatch):
     def handler(request):
         requests.append(request.url.params)
         if len(requests) == 1:
-            return httpx.Response(200, json=[post(id) for id in range(1000, 1000 - PAGE_SIZE, -1)])
-        return httpx.Response(200, json=[post(5)])
+            return httpx2.Response(200, json=[post(id) for id in range(1000, 1000 - PAGE_SIZE, -1)])
+        return httpx2.Response(200, json=[post(5)])
 
     use_danbooru(monkeypatch, handler)
     posts = collect(DanbooruSource(), tags="cat", rating="sketchy")
@@ -82,7 +82,7 @@ def test_order_searches_use_numbered_pages(monkeypatch):
 
     def handler(request):
         pages.append(request.url.params["page"])
-        return httpx.Response(200, json=[post(id) for id in range(PAGE_SIZE if len(pages) == 1 else 1)])
+        return httpx2.Response(200, json=[post(id) for id in range(PAGE_SIZE if len(pages) == 1 else 1)])
 
     use_danbooru(monkeypatch, handler)
     collect(DanbooruSource(), tags="cat order:score")
@@ -97,7 +97,7 @@ def test_blacklist_is_applied_locally_and_restricted_posts_are_dropped(monkeypat
 
     def handler(request):
         tags_sent.append(request.url.params["tags"])
-        return httpx.Response(200, json=posts)
+        return httpx2.Response(200, json=posts)
 
     use_danbooru(monkeypatch, handler)
     results = collect(DanbooruSource(), tags="cat", blacklist_tags="dog")
@@ -107,13 +107,13 @@ def test_blacklist_is_applied_locally_and_restricted_posts_are_dropped(monkeypat
 
 
 def test_ugoira_uses_the_video_file(monkeypatch):
-    use_danbooru(monkeypatch, lambda request: httpx.Response(200, json=[post(1, file_ext="zip")]))
+    use_danbooru(monkeypatch, lambda request: httpx2.Response(200, json=[post(1, file_ext="zip")]))
 
     assert collect(DanbooruSource())[0]["file_url"] == "http://cdn.test/1.webm"
 
 
 def test_tag_types_come_from_the_post(monkeypatch):
-    use_danbooru(monkeypatch, lambda request: httpx.Response(200, json=[post(1)]))
+    use_danbooru(monkeypatch, lambda request: httpx2.Response(200, json=[post(1)]))
     source = DanbooruSource()
     collect(source)
 
@@ -127,14 +127,14 @@ def test_tag_types_come_from_the_post(monkeypatch):
 
 
 def test_tag_limit_errors_explain_themselves(monkeypatch):
-    use_danbooru(monkeypatch, lambda request: httpx.Response(422))
+    use_danbooru(monkeypatch, lambda request: httpx2.Response(422))
 
     with pytest.raises(RuntimeError, match="have to fit"):
         collect(DanbooruSource(), tags="order:score score:>5")
 
 
 def test_sorted_searches_too_big_for_danbooru_explain_themselves(monkeypatch):
-    use_danbooru(monkeypatch, lambda request: httpx.Response(500))
+    use_danbooru(monkeypatch, lambda request: httpx2.Response(500))
 
     with pytest.raises(RuntimeError, match="too many posts to sort"):
         collect(DanbooruSource(), tags="cat order:score")
@@ -144,9 +144,9 @@ def over_limit_handler(sent, posts=(), limit=2, aliases=None, counts=None, pairs
     def handler(request):
         path, params = request.url.path, request.url.params
         if path == "/profile.json":
-            return httpx.Response(200, json={"tag_query_limit": limit})
+            return httpx2.Response(200, json={"tag_query_limit": limit})
         if path == "/tag_aliases.json":
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json=[
                     {"antecedent_name": name, "consequent_name": target}
@@ -155,7 +155,7 @@ def over_limit_handler(sent, posts=(), limit=2, aliases=None, counts=None, pairs
                 ],
             )
         if path == "/tags.json":
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json=[
                     {"name": name, "post_count": count}
@@ -164,9 +164,9 @@ def over_limit_handler(sent, posts=(), limit=2, aliases=None, counts=None, pairs
                 ],
             )
         if path == "/counts/posts.json":
-            return httpx.Response(200, json={"counts": {"posts": (pairs or {}).get(params["tags"])}})
+            return httpx2.Response(200, json={"counts": {"posts": (pairs or {}).get(params["tags"])}})
         sent.append(params["tags"])
-        return httpx.Response(200, json=list(posts))
+        return httpx2.Response(200, json=list(posts))
 
     return handler
 
@@ -180,7 +180,7 @@ def test_searches_within_the_limit_make_no_extra_requests(monkeypatch):
 
     def handler(request):
         paths.append(request.url.path)
-        return httpx.Response(200, json=[post(1)])
+        return httpx2.Response(200, json=[post(1)])
 
     use_danbooru(monkeypatch, handler)
     collect(DanbooruSource(), tags="cat dog", rating="safe")
@@ -347,7 +347,7 @@ def test_searches_ask_only_for_the_fields_they_use(monkeypatch):
 
     def handler(request):
         fields.append(request.url.params["only"])
-        return httpx.Response(200, json=[post(1, md5="abc", rating="g", source="http://source.test")])
+        return httpx2.Response(200, json=[post(1, md5="abc", rating="g", source="http://source.test")])
 
     use_danbooru(monkeypatch, handler)
     result = collect(DanbooruSource(), tags="cat")[0]
@@ -358,7 +358,7 @@ def test_searches_ask_only_for_the_fields_they_use(monkeypatch):
 
 def test_notes_come_through_as_markdown(monkeypatch):
     note = {"x": 1, "y": 2, "width": 3, "height": 4, "body": "<b>hi</b>", "is_active": True}
-    use_danbooru(monkeypatch, lambda request: httpx.Response(200, json=[note, {**note, "is_active": False}]))
+    use_danbooru(monkeypatch, lambda request: httpx2.Response(200, json=[note, {**note, "is_active": False}]))
     source = DanbooruSource()
 
     assert asyncio.run(source.grab_notes({"id": 1})) is None

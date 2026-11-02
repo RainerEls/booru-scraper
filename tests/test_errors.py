@@ -1,7 +1,8 @@
 import asyncio
+import logging
 import xml.etree.ElementTree as ET
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from helpers import mock_client
@@ -30,7 +31,7 @@ def booru(monkeypatch, handler):
 
 
 def categories_ok(request):
-    return httpx.Response(200, json={"results": [], "config": {}})
+    return httpx2.Response(200, json={"results": [], "config": {}})
 
 
 def error_lines(job):
@@ -43,8 +44,8 @@ def error_lines(job):
         (ApiError("http://source.test/posts", 429), "source.test is rate limiting requests"),
         (ApiError("http://source.test/posts", 503), "source.test is having problems (HTTP 503)"),
         (ApiError("http://source.test/posts", 404), "source.test returned HTTP 404"),
-        (httpx.ReadTimeout("slow"), "The request timed out"),
-        (httpx.ConnectError("refused"), "The connection failed"),
+        (httpx2.ReadTimeout("slow"), "The request timed out"),
+        (httpx2.ConnectError("refused"), "The connection failed"),
         (ValueError("not json"), "The response wasn't in the expected format"),
         (KeyError("posts"), "The response wasn't in the expected format"),
         (ET.ParseError("bad xml"), "The response wasn't in the expected format"),
@@ -56,21 +57,25 @@ def test_errors_read_as_plain_language(error, text):
 
 
 def test_a_status_error_from_szurubooru_reads_the_same_way():
-    request = httpx.Request("PUT", "http://booru.test/api/post/1")
-    error = httpx.HTTPStatusError("long message", request=request, response=httpx.Response(500, request=request))
+    request = httpx2.Request("PUT", "http://booru.test/api/post/1")
+    error = httpx2.HTTPStatusError("long message", request=request, response=httpx2.Response(500, request=request))
 
     assert describe(error) == "booru.test is having problems (HTTP 500)"
 
 
 @pytest.mark.parametrize("status", [401, 403])
 def test_a_rejected_request_never_shows_the_key(status):
-    client = mock_client(lambda request: httpx.Response(status))
+    client = mock_client(lambda request: httpx2.Response(status))
 
     with pytest.raises(CredentialsRejected) as error:
         asyncio.run(api_get(client, "http://source.test/posts", {"api_key": "secret-key"}))
 
     assert "source.test refused" in str(error.value)
     assert "secret-key" not in str(error.value)
+
+
+def test_request_urls_stay_out_of_the_logs():
+    assert logging.getLogger("httpx2").getEffectiveLevel() >= logging.WARNING
 
 
 def test_placeholder_values_count_as_unset(monkeypatch):
@@ -90,10 +95,10 @@ def test_missing_szurubooru_settings_are_named(monkeypatch):
 @pytest.mark.parametrize(
     "response, problem",
     [
-        (httpx.Response(403, json={"name": "AuthError"}), CredentialsRejected),
-        (httpx.Response(404, json={"name": "UserNotFoundError"}), SetupProblem),
-        (httpx.Response(200, text="<!DOCTYPE html>"), SetupProblem),
-        (httpx.Response(200, json=["not the api"]), SetupProblem),
+        (httpx2.Response(403, json={"name": "AuthError"}), CredentialsRejected),
+        (httpx2.Response(404, json={"name": "UserNotFoundError"}), SetupProblem),
+        (httpx2.Response(200, text="<!DOCTYPE html>"), SetupProblem),
+        (httpx2.Response(200, json=["not the api"]), SetupProblem),
     ],
 )
 def test_a_bad_szurubooru_setup_is_a_setup_problem(monkeypatch, response, problem):
@@ -105,7 +110,7 @@ def test_a_bad_szurubooru_setup_is_a_setup_problem(monkeypatch, response, proble
 
 def test_an_unreachable_szurubooru_names_its_url(monkeypatch):
     def down(request):
-        raise httpx.ConnectError("refused")
+        raise httpx2.ConnectError("refused")
 
     booru(monkeypatch, down)
 
@@ -138,7 +143,7 @@ def test_a_source_without_its_key_stops_before_searching(monkeypatch, fake_db):
 
 def test_a_bad_szurubooru_token_stops_before_searching(monkeypatch, fake_db):
     source = FakeSource([fake_post()])
-    booru(monkeypatch, lambda request: httpx.Response(403, json={"name": "AuthError"}))
+    booru(monkeypatch, lambda request: httpx2.Response(403, json={"name": "AuthError"}))
 
     job = run_job(monkeypatch, source)
 
@@ -151,10 +156,10 @@ def test_a_private_instance_account_that_cannot_list_categories_still_uploads(mo
     def handler(request):
         url = str(request.url)
         if url.endswith("/info"):
-            return httpx.Response(200, json={"config": {}})
+            return httpx2.Response(200, json={"config": {}})
         if url.endswith("/posts/"):
-            return httpx.Response(200, json={"id": 7})
-        return httpx.Response(403, json={"name": "AuthError"})
+            return httpx2.Response(200, json={"id": 7})
+        return httpx2.Response(403, json={"name": "AuthError"})
 
     booru(monkeypatch, handler)
 
@@ -172,10 +177,10 @@ def test_a_duplicate_upload_without_edit_rights_is_skipped_not_fatal(monkeypatch
     def handler(request):
         url = str(request.url)
         if url.endswith("/posts/"):
-            return httpx.Response(400, json={"name": "PostAlreadyUploadedError", "otherPostId": 12})
+            return httpx2.Response(400, json={"name": "PostAlreadyUploadedError", "otherPostId": 12})
         if "/post/12" in url:
-            return httpx.Response(403, json={"name": "AuthError"})
-        return httpx.Response(404 if "/tag/" in url else 200, json={"results": [], "config": {}})
+            return httpx2.Response(403, json={"name": "AuthError"})
+        return httpx2.Response(404 if "/tag/" in url else 200, json={"results": [], "config": {}})
 
     booru(monkeypatch, handler)
     source = FakeSource([fake_post(1), fake_post(2)], [])
@@ -221,8 +226,8 @@ def test_a_rejected_upload_cancels_the_rest_of_the_run(monkeypatch, fake_db):
     def handler(request):
         if str(request.url).endswith("/posts/"):
             uploads.append(request)
-            return httpx.Response(403, json={"name": "AuthError"})
-        return httpx.Response(200, json={"results": [], "version": 1, "config": {}})
+            return httpx2.Response(403, json={"name": "AuthError"})
+        return httpx2.Response(200, json={"results": [], "version": 1, "config": {}})
 
     booru(monkeypatch, handler)
     source = FakeSource([fake_post(id) for id in range(1, 6)])
@@ -244,8 +249,8 @@ def test_a_search_error_reads_plainly_and_keeps_the_posts_found(monkeypatch, fak
 
     def handler(request):
         if request.method == "POST":
-            return httpx.Response(200, json={"id": 7})
-        return httpx.Response(200, json={"results": [], "version": 1, "config": {}})
+            return httpx2.Response(200, json={"id": 7})
+        return httpx2.Response(200, json={"results": [], "version": 1, "config": {}})
 
     booru(monkeypatch, handler)
 
@@ -310,7 +315,7 @@ def test_a_rejected_integrity_check_explains_itself(monkeypatch):
     monkeypatch.setattr(integrity.db, "finish_check", finish_check)
     monkeypatch.setattr(integrity.db, "get_uploaded_posts", get_uploaded_posts)
     monkeypatch.setattr(integrity.notify, "send", send)
-    booru(monkeypatch, lambda request: httpx.Response(403))
+    booru(monkeypatch, lambda request: httpx2.Response(403))
 
     asyncio.run(integrity.run_check(1))
 
@@ -324,7 +329,7 @@ def test_retries_still_apply_before_giving_up(monkeypatch):
 
     def handler(request):
         calls.append(request)
-        return httpx.Response(503)
+        return httpx2.Response(503)
 
     with pytest.raises(ApiError):
         asyncio.run(api_get(mock_client(handler), "http://source.test/posts"))
@@ -341,14 +346,14 @@ def tag_booru(monkeypatch, existing=(), post_tag=200, put_tag=200, post_status=2
         if "/tag/" in url:
             name = url.rsplit("/", 1)[1]
             if request.method == "PUT":
-                return httpx.Response(put_tag, json={})
+                return httpx2.Response(put_tag, json={})
             if name in existing:
-                return httpx.Response(200, json={"version": 1, "category": existing[name]})
-            return httpx.Response(404, json={})
+                return httpx2.Response(200, json={"version": 1, "category": existing[name]})
+            return httpx2.Response(404, json={})
         if url.endswith("/tags"):
-            return httpx.Response(post_tag, json={})
+            return httpx2.Response(post_tag, json={})
         if url.endswith("/posts/"):
-            return httpx.Response(post_status, json={"id": 7})
+            return httpx2.Response(post_status, json={"id": 7})
         return categories_ok(request)
 
     booru(monkeypatch, handler)
@@ -404,11 +409,11 @@ def merge_setup(monkeypatch, fake_db, handler, count=3):
 def test_no_post_edit_permission_warns_once_and_keeps_duplicates_for_later(monkeypatch, fake_db):
     def handler(request):
         if "/tag/" in str(request.url):
-            return httpx.Response(404, json={})
+            return httpx2.Response(404, json={})
         if request.method == "PUT" and "/post/" in str(request.url):
-            return httpx.Response(403, json={})
+            return httpx2.Response(403, json={})
         if "/post/" in str(request.url):
-            return httpx.Response(200, json={"version": 1, "tags": [], "source": None})
+            return httpx2.Response(200, json={"version": 1, "tags": [], "source": None})
         return categories_ok(request)
 
     job = merge_setup(monkeypatch, fake_db, handler)
@@ -420,7 +425,7 @@ def test_no_post_edit_permission_warns_once_and_keeps_duplicates_for_later(monke
 def test_a_duplicate_of_a_deleted_booru_post_is_not_retried(monkeypatch, fake_db):
     def handler(request):
         if "/post/" in str(request.url) or "/tag/" in str(request.url):
-            return httpx.Response(404, json={})
+            return httpx2.Response(404, json={})
         return categories_ok(request)
 
     job = merge_setup(monkeypatch, fake_db, handler, count=1)
@@ -436,12 +441,12 @@ def test_tag_categories_match_whatever_their_case(monkeypatch, fake_db):
         url = str(request.url)
         calls.append((request.method, url))
         if url.endswith("/tag-categories"):
-            return httpx.Response(200, json={"results": [{"name": "General"}, {"name": "Artist"}]})
+            return httpx2.Response(200, json={"results": [{"name": "General"}, {"name": "Artist"}]})
         if "/tag/" in url:
-            return httpx.Response(200, json={"version": 1, "category": "General"})
+            return httpx2.Response(200, json={"version": 1, "category": "General"})
         if url.endswith("/posts/"):
-            return httpx.Response(200, json={"id": 7})
-        return httpx.Response(200, json={"config": {}})
+            return httpx2.Response(200, json={"id": 7})
+        return httpx2.Response(200, json={"config": {}})
 
     booru(monkeypatch, handler)
     source = FakeSource([fake_post(tags="cat")], ["cat"])
@@ -454,7 +459,7 @@ def test_tag_categories_match_whatever_their_case(monkeypatch, fake_db):
 
 
 def test_a_rate_limited_file_check_waits_and_tries_again(monkeypatch):
-    responses = [httpx.Response(429, headers={"Retry-After": "0"}), httpx.Response(429), httpx.Response(200)]
+    responses = [httpx2.Response(429, headers={"Retry-After": "0"}), httpx2.Response(429), httpx2.Response(200)]
     booru(monkeypatch, lambda request: responses.pop(0))
 
     assert asyncio.run(szurubooru.head_file("data/posts/1.png")).status_code == 200
@@ -462,6 +467,6 @@ def test_a_rate_limited_file_check_waits_and_tries_again(monkeypatch):
 
 
 def test_a_file_check_gives_up_once_the_retries_run_out(monkeypatch):
-    booru(monkeypatch, lambda request: httpx.Response(429))
+    booru(monkeypatch, lambda request: httpx2.Response(429))
 
     assert asyncio.run(szurubooru.head_file("data/posts/1.png")).status_code == 429

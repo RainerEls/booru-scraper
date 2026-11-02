@@ -1,6 +1,6 @@
 import asyncio
 
-import httpx
+import httpx2
 from helpers import collect, mock_client, tags_of
 
 from app.sources import e621
@@ -39,7 +39,7 @@ def test_search_pages_by_id_and_normalises_posts(monkeypatch):
     def handler(request):
         requests.append(request.url.params)
         count = PAGE_SIZE if len(requests) == 1 else 1
-        return httpx.Response(200, json={"posts": [post(1000 - i) for i in range(count)]})
+        return httpx2.Response(200, json={"posts": [post(1000 - i) for i in range(count)]})
 
     use_e621(monkeypatch, handler)
     posts = collect(E621Source(), tags="cat", blacklist_tags="dog", rating="sketchy")
@@ -59,7 +59,7 @@ def test_order_searches_use_numbered_pages(monkeypatch):
     def handler(request):
         pages.append(request.url.params["page"])
         count = PAGE_SIZE if len(pages) == 1 else 1
-        return httpx.Response(200, json={"posts": [post(i) for i in range(count)]})
+        return httpx2.Response(200, json={"posts": [post(i) for i in range(count)]})
 
     use_e621(monkeypatch, handler)
     collect(E621Source(), tags="cat order:score")
@@ -68,13 +68,13 @@ def test_order_searches_use_numbered_pages(monkeypatch):
 
 
 def test_posts_without_a_file_are_dropped(monkeypatch):
-    use_e621(monkeypatch, lambda request: httpx.Response(200, json={"posts": [post(1), post(2, url=None)]}))
+    use_e621(monkeypatch, lambda request: httpx2.Response(200, json={"posts": [post(1), post(2, url=None)]}))
 
     assert [p["id"] for p in collect(E621Source())] == [1]
 
 
 def test_tag_groups_map_onto_szurubooru_categories(monkeypatch):
-    use_e621(monkeypatch, lambda request: httpx.Response(200, json={"posts": [post(1)]}))
+    use_e621(monkeypatch, lambda request: httpx2.Response(200, json={"posts": [post(1)]}))
     source = E621Source()
     collect(source)
 
@@ -91,7 +91,7 @@ def test_tag_groups_map_onto_szurubooru_categories(monkeypatch):
 
 def test_notes_are_only_requested_for_posts_that_have_them(monkeypatch):
     note = {"x": 1, "y": 2, "width": 3, "height": 4, "body": "<b>hi</b>", "is_active": True}
-    use_e621(monkeypatch, lambda request: httpx.Response(200, json=[note]))
+    use_e621(monkeypatch, lambda request: httpx2.Response(200, json=[note]))
     source = E621Source()
 
     assert asyncio.run(source.grab_notes({"id": 1, "has_notes": False})) is None

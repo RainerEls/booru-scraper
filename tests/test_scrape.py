@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from helpers import mock_client
@@ -128,7 +128,7 @@ def run_fake_scrape(monkeypatch, source, limit=10):
 
 
 def test_rejected_upload_is_retried_next_run(monkeypatch, fake_db):
-    responses = [httpx.Response(500, json={"name": "ServerError"}), httpx.Response(200, json={"id": 7})]
+    responses = [httpx2.Response(500, json={"name": "ServerError"}), httpx2.Response(200, json={"id": 7})]
     use_szurubooru(monkeypatch, lambda request: responses.pop(0))
 
     first = run_fake_scrape(monkeypatch, FakeSource([fake_post()]))
@@ -145,9 +145,9 @@ def test_a_post_szurubooru_can_never_take_stops_blocking_its_search(monkeypatch,
     def handler(request):
         url = json.loads(request.content)["contentUrl"]
         if url.endswith("/1.png"):
-            return httpx.Response(400, json={"name": "DownloadTooLargeError"})
+            return httpx2.Response(400, json={"name": "DownloadTooLargeError"})
         uploaded.append(url)
-        return httpx.Response(200, json={"id": 7})
+        return httpx2.Response(200, json={"id": 7})
 
     use_szurubooru(monkeypatch, handler)
     posts = [fake_post(1), fake_post(2)]
@@ -174,8 +174,8 @@ def test_the_shared_blacklist_applies_to_every_scrape(monkeypatch, fake_db):
 def test_progress_reports_each_phase(monkeypatch, fake_db):
     def handler(request):
         if request.method == "GET":
-            return httpx.Response(404)
-        return httpx.Response(200, json={"id": 7})
+            return httpx2.Response(404)
+        return httpx2.Response(200, json={"id": 7})
 
     use_szurubooru(monkeypatch, handler)
 
@@ -195,7 +195,7 @@ def test_uploads_link_back_to_the_post(monkeypatch):
 
     def handler(request):
         bodies.append(json.loads(request.content))
-        return httpx.Response(200, json={"id": 7})
+        return httpx2.Response(200, json={"id": 7})
 
     use_szurubooru(monkeypatch, handler)
     source = Linked([])
@@ -225,7 +225,7 @@ def test_stopping_keeps_synced_tags_and_releases_claims(monkeypatch, fake_db):
             yield {"name": "never", "category": "general"}
 
     def handler(request):
-        return httpx.Response(404 if request.method == "GET" else 200, json={})
+        return httpx2.Response(404 if request.method == "GET" else 200, json={})
 
     use_szurubooru(monkeypatch, handler)
     monkeypatch.setitem(scrape.SOURCES, "fake", Slow([fake_post()]))
@@ -251,7 +251,7 @@ def test_stopping_keeps_synced_tags_and_releases_claims(monkeypatch, fake_db):
 
 
 def test_a_run_keeps_its_log_and_failed_posts(monkeypatch, fake_db):
-    use_szurubooru(monkeypatch, lambda request: httpx.Response(500, json={"name": "ServerError"}))
+    use_szurubooru(monkeypatch, lambda request: httpx2.Response(500, json={"name": "ServerError"}))
 
     run_fake_scrape(monkeypatch, FakeSource([fake_post(3)]))
 
@@ -265,7 +265,7 @@ def test_retrying_looks_posts_up_by_id(monkeypatch, fake_db):
             yield fake_post(int(tags.removeprefix("id:")))
 
     monkeypatch.setattr("app.sources.base.ID_LOOKUP_DELAY", 0)
-    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
+    use_szurubooru(monkeypatch, lambda request: httpx2.Response(200, json={"id": 7}))
     monkeypatch.setitem(scrape.SOURCES, "fake", ById([]))
     job = run_job()
 
@@ -299,7 +299,7 @@ def test_retry_route_clears_rejections_and_starts_a_job(monkeypatch, fake_db):
 def test_a_scheduled_run_stops_once_it_is_caught_up(monkeypatch, fake_db):
     for id in range(1, 4):
         fake_db.posts[("fake", id)] = {"md5": f"md5-{id}", "status": "processed"}
-    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
+    use_szurubooru(monkeypatch, lambda request: httpx2.Response(200, json={"id": 7}))
     source = FakeSource([fake_post(9)] + [fake_post(id) for id in range(1, 4)] + [fake_post(10)])
     monkeypatch.setitem(scrape.SOURCES, "fake", source)
     job = run_job()
@@ -374,7 +374,7 @@ def test_a_schedule_without_an_interval_is_refused():
 
 
 def test_limit_counts_new_posts_not_known_ones(monkeypatch, fake_db):
-    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
+    use_szurubooru(monkeypatch, lambda request: httpx2.Response(200, json={"id": 7}))
     for id in (1, 2, 3):
         fake_db.posts[("fake", id)] = {"md5": f"md5-{id}", "status": "processed"}
     source = FakeSource([fake_post(id) for id in range(1, 11)])
@@ -390,8 +390,8 @@ def test_limit_counts_new_posts_not_known_ones(monkeypatch, fake_db):
 def test_failed_tag_sync_is_retried_and_does_not_stop_the_run(monkeypatch, fake_db):
     def handler(request):
         if "/tag" in request.url.path:
-            return httpx.Response(500) if request.method == "POST" else httpx.Response(404)
-        return httpx.Response(200, json={"id": 7})
+            return httpx2.Response(500) if request.method == "POST" else httpx2.Response(404)
+        return httpx2.Response(200, json={"id": 7})
 
     use_szurubooru(monkeypatch, handler)
     messages = run_fake_scrape(monkeypatch, FakeSource([fake_post()], tags=["cat"]))
@@ -405,7 +405,7 @@ def test_tag_names_are_url_encoded(monkeypatch):
 
     def handler(request):
         paths.append(request.url.raw_path)
-        return httpx.Response(404)
+        return httpx2.Response(404)
 
     use_szurubooru(monkeypatch, handler)
     asyncio.run(szurubooru.get_tag("what?#50%"))
@@ -418,9 +418,9 @@ def test_updating_a_tag_keeps_its_other_names(monkeypatch):
 
     def handler(request):
         if request.method == "GET":
-            return httpx.Response(200, json={"names": ["cat", "neko"], "version": 3})
+            return httpx2.Response(200, json={"names": ["cat", "neko"], "version": 3})
         bodies.append(json.loads(request.content))
-        return httpx.Response(200, json={})
+        return httpx2.Response(200, json={})
 
     use_szurubooru(monkeypatch, handler)
     asyncio.run(szurubooru.sync_tag("neko", "general"))
@@ -433,7 +433,7 @@ def test_a_database_failure_after_upload_counts_once(monkeypatch, fake_db):
         raise RuntimeError("database down")
 
     monkeypatch.setattr(fake_db, "finish_post", broken)
-    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
+    use_szurubooru(monkeypatch, lambda request: httpx2.Response(200, json={"id": 7}))
 
     messages = run_fake_scrape(monkeypatch, FakeSource([fake_post()]))
 
@@ -445,7 +445,7 @@ def test_empty_tags_are_not_sent(monkeypatch):
 
     def handler(request):
         bodies.append(request.content)
-        return httpx.Response(200, json={})
+        return httpx2.Response(200, json={})
 
     use_szurubooru(monkeypatch, handler)
     asyncio.run(szurubooru.upload_post({"file_url": "http://x.test/1.png", "tags": " a  b "}, "safe"))
@@ -474,7 +474,7 @@ def test_search_failure_still_uploads_what_was_found(monkeypatch, fake_db):
             yield fake_post(1)
             raise RuntimeError("Gelbooru returned HTTP 429")
 
-    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
+    use_szurubooru(monkeypatch, lambda request: httpx2.Response(200, json={"id": 7}))
     messages = run_fake_scrape(monkeypatch, FailsPartWay([]))
 
     assert fake_db.posts[("fake", 1)]["status"] == "processed"
@@ -558,8 +558,8 @@ def test_only_missing_tag_categories_are_created(monkeypatch):
     def handler(request):
         if request.method == "POST":
             created.append(json.loads(request.content))
-            return httpx.Response(200, json={})
-        return httpx.Response(200, json={"results": [{"name": "default"}, {"name": "general"}]})
+            return httpx2.Response(200, json={})
+        return httpx2.Response(200, json={"results": [{"name": "default"}, {"name": "general"}]})
 
     use_szurubooru(monkeypatch, handler)
     asyncio.run(szurubooru.ensure_tag_categories(["general", "species", "species", "artist"]))
@@ -569,7 +569,7 @@ def test_only_missing_tag_categories_are_created(monkeypatch):
 
 def test_a_category_failure_does_not_stop_the_run(monkeypatch, fake_db):
     async def refused(names):
-        raise httpx.ConnectError("refused")
+        raise httpx2.ConnectError("refused")
 
     monkeypatch.setattr(scrape.szurubooru, "ensure_tag_categories", refused)
     messages = run_fake_scrape(monkeypatch, FakeSource([]))
@@ -594,7 +594,7 @@ def test_a_restart_marks_the_run_interrupted_and_keeps_its_log(monkeypatch, fake
             await asyncio.Event().wait()
             yield
 
-    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"results": []}))
+    use_szurubooru(monkeypatch, lambda request: httpx2.Response(200, json={"results": []}))
     monkeypatch.setitem(scrape.SOURCES, "fake", SlowSource([]))
 
     async def scenario():
@@ -633,10 +633,10 @@ def merge_booru(monkeypatch, current=None, status=200):
         if request.method == "PUT" and "/post/" in str(request.url):
             sent.append((str(request.url), json.loads(request.content)))
         if "/post/" in str(request.url):
-            return httpx.Response(status, json=current)
+            return httpx2.Response(status, json=current)
         if request.method == "POST" and str(request.url).endswith("/posts/"):
-            return httpx.Response(200, json={"id": 50})
-        return httpx.Response(404 if request.method == "GET" else 200, json={"results": [], "version": 1})
+            return httpx2.Response(200, json={"id": 50})
+        return httpx2.Response(404 if request.method == "GET" else 200, json={"results": [], "version": 1})
 
     use_szurubooru(monkeypatch, handler)
     return sent
@@ -705,12 +705,12 @@ def test_a_post_szurubooru_already_has_is_merged_into_that_post(monkeypatch, fak
 
     def handler(request):
         if str(request.url).endswith("/posts/"):
-            return httpx.Response(400, json={"name": "PostAlreadyUploadedError", "otherPostId": 12})
+            return httpx2.Response(400, json={"name": "PostAlreadyUploadedError", "otherPostId": 12})
         if "/post/12" in str(request.url):
             if request.method == "PUT":
                 sent.append(json.loads(request.content))
-            return httpx.Response(200, json=current)
-        return httpx.Response(404 if request.method == "GET" else 200, json={"results": []})
+            return httpx2.Response(200, json=current)
+        return httpx2.Response(404 if request.method == "GET" else 200, json={"results": []})
 
     use_szurubooru(monkeypatch, handler)
     source = FakeSource([fake_post(tags="cat dog")], ["cat", "dog"])

@@ -1,6 +1,6 @@
 import asyncio
 
-import httpx
+import httpx2
 from helpers import collect, mock_client, tags_of
 
 from app.sources import yandere
@@ -8,7 +8,7 @@ from app.sources.yandere import YandereSource
 
 
 def page(posts, tags=None):
-    return httpx.Response(200, json={"posts": posts, "tags": tags or {}})
+    return httpx2.Response(200, json={"posts": posts, "tags": tags or {}})
 
 
 def use_yandere(monkeypatch, handler):
@@ -52,7 +52,7 @@ def test_notes_keep_active_visible_ones(monkeypatch):
     note = {"x": 1, "y": 2, "width": 3, "height": 4, "body": "<b>hi</b>", "is_active": True}
 
     def handler(request):
-        return httpx.Response(200, json=[note, {**note, "is_active": False}, {**note, "width": 0}])
+        return httpx2.Response(200, json=[note, {**note, "is_active": False}, {**note, "width": 0}])
 
     use_yandere(monkeypatch, handler)
     source = YandereSource()
