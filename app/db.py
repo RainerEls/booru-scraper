@@ -240,19 +240,9 @@ async def get_runs():
         return (await session.scalars(select(Runs).order_by(Runs.created_at.desc()).limit(100))).all()
 
 
-async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, status, schedule_id=None, retry_of=None):
+async def create_run(**fields):
     async with Session() as session:
-        run = Runs(
-            uuid=uuid,
-            source=source,
-            tags=tags,
-            blacklist_tags=blacklist_tags,
-            rating=rating,
-            post_limit=post_limit,
-            status=status,
-            schedule_id=schedule_id,
-            retry_of=retry_of,
-        )
+        run = Runs(status="running", **fields)
         session.add(run)
         await session.commit()
         return run.id
@@ -290,16 +280,9 @@ async def get_schedule(id):
         return await session.get(Schedules, id)
 
 
-async def create_schedule(source, tags, blacklist_tags, rating, post_limit, interval_hours):
+async def create_schedule(**fields):
     async with Session() as session:
-        schedule = Schedules(
-            source=source,
-            tags=tags,
-            blacklist_tags=blacklist_tags,
-            rating=rating,
-            post_limit=post_limit,
-            interval_hours=interval_hours,
-        )
+        schedule = Schedules(**fields)
         session.add(schedule)
         await session.commit()
         return schedule.id

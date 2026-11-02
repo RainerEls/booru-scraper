@@ -16,7 +16,7 @@ EVENTS = {
 }
 
 services = apprise.Apprise(asset=apprise.AppriseAsset(app_id="Booru Scraper", app_desc="Booru Scraper"))
-chosen = set(EVENTS)
+chosen = set()
 
 
 def setup():
@@ -25,11 +25,13 @@ def setup():
     chosen.update(names & set(EVENTS))
     if names - set(EVENTS):
         logger.warning(f"Ignoring unknown NOTIFY_ON event(s): {', '.join(sorted(names - set(EVENTS)))}")
-    if config.APPRISE_URLS:
-        services.add(config.APPRISE_URLS)
+    if not config.APPRISE_URLS:
+        return
+    services.add(config.APPRISE_URLS)
+    if len(services):
         logger.info(f"Notifications go to {len(services)} service(s) for: {', '.join(sorted(chosen))}")
-        if not len(services):
-            logger.warning("APPRISE_URLS holds no URL that Apprise understands")
+    else:
+        logger.warning("APPRISE_URLS holds no URL that Apprise understands")
 
 
 async def send(event, body):

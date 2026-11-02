@@ -126,15 +126,7 @@
       </tr>
       {% if run.log or run is repeatable %}
       <tr>
-        <td colspan="12" class="check-detail run-detail">
-          {% if run.log %}
-          <details>
-            <summary>Log ({{ run.log | length }} lines)</summary>
-            <div class="log log--run" tabindex="0">
-              {% for line in run.log %}<div class="log-line log-line--{{ line.level }}">{{ line.message }}</div>{% endfor %}
-            </div>
-          </details>
-          {% endif %}
+        <td colspan="12" class="check-detail">
           <div class="run-actions">
           {% if run.failed_posts %}
           <button type="button" class="btn btn--primary icon icon-retry run-action" data-url="/api/runs/{{ run.id }}/retry" aria-label="Retry {{ run.failed_posts | length }} failed post(s) from {{ run.source }} {{ run.tags or 'all posts' }}">Retry {{ run.failed_posts | length }} failed post(s)</button>
@@ -143,6 +135,14 @@
           <button type="button" class="btn btn--secondary icon icon-again run-action" data-url="/api/runs/{{ run.id }}/again" aria-label="Run again: {{ run.source }} {{ run.tags or 'all posts' }}">Run again</button>
           {% endif %}
           </div>
+          {% if run.log %}
+          <details>
+            <summary>Log ({{ run.log | length }} lines)</summary>
+            <div class="log log--run" tabindex="0">
+              {% for line in run.log %}<div class="log-line log-line--{{ line.level }}">{{ line.message }}</div>{% endfor %}
+            </div>
+          </details>
+          {% endif %}
         </td>
       </tr>
       {% endif %}
