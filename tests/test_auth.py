@@ -136,3 +136,7 @@ def test_cross_site_writes_are_refused_even_when_logged_in(client):
 
 def test_an_oversized_login_form_is_refused(client):
     assert client.post("/login", content=b"password=" + b"x" * auth.MAX_FORM_BYTES).status_code == 413
+
+
+def test_pages_link_their_stylesheet_so_it_loads_behind_an_https_proxy(client):
+    assert 'href="/static/styles.css"' in client.get("/login").text
