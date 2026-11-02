@@ -54,6 +54,7 @@ class Job:
         self.lines = []
         self.task = None
         self.stopping = False
+        self.stop_status = "stopped"
 
     def publish(self, event):
         self.events.append(event)
@@ -87,9 +88,10 @@ class Job:
         self.status = "error"
         self.log("error", message)
 
-    def stop(self):
+    def stop(self, status="stopped"):
         if self.task and not self.stopping:
             self.stopping = True
+            self.stop_status = status
             self.task.cancel()
 
     def finish(self):
@@ -102,14 +104,14 @@ async def lifespan(app: FastAPI):
     config.validate()
     await db.migrate()
     await db.release_stale_claims()
-    await db.fail_interrupted_runs()
+    await db.mark_interrupted_work()
     scheduler = asyncio.create_task(run_schedules())
 
     yield
 
     scheduler.cancel()
     for job in jobs.values():
-        job.stop()
+        job.stop("interrupted")
     await asyncio.gather(*[job.task for job in jobs.values() if job.task], return_exceptions=True)
     await http.close_clients()
     await db.close_db()
@@ -317,8 +319,8 @@ async def run_scrape(run_id, job, spec):
         await asyncio.gather(*[process_post(source, entry, post, semaphore, job) for entry, post in new_posts])
         job.log("info", " - ".join(f"{field.title()}: {count}" for field, count in job.counters.items()))
     except asyncio.CancelledError:
-        job.status = "stopped"
-        job.log("warning", "Stopped")
+        job.status = job.stop_status
+        job.log("warning", job.status.capitalize())
     except Exception as e:
         logger.exception("Scrape failed")
         job.error(f"Scrape failed: {e!r}")

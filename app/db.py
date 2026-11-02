@@ -159,8 +159,8 @@ async def release_stale_claims():
     await write(delete(Posts).where(Posts.status.in_(("queued", "failed"))))
 
 
-async def fail_interrupted_runs():
-    await write(update(Runs).where(Runs.status == "running").values(status="error"))
+async def mark_interrupted_work():
+    await write(update(Runs).where(Runs.status == "running").values(status="interrupted"))
     await write(
         update(IntegrityChecks)
         .where(IntegrityChecks.status.in_(CHECK_BUSY))

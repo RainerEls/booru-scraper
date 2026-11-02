@@ -15,6 +15,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 - Run history stored in Postgres, with each run's log and a button to retry the posts that failed
 - Saved searches that run on a schedule, one at a time. Each picks up what's new and stops after 100 known posts in a row, so it doesn't crawl a whole tag every run
 - A stop button for a running scrape, which keeps the tags synced so far
+- A restart saves the log of any running scrape and marks it interrupted
 - `BLACKLIST_TAGS` in `.env` applies a blacklist to every scrape, on top of the one in the form
 - Integrity checks that compare uploaded posts with what's on szurubooru, telling deliberately deleted or merged posts apart from ones that went missing. They only report, with a separate re-pull button for posts that are missing or damaged, which never touches deleted or merged ones
 - Pluggable source architecture, with Gelbooru, Danbooru, Yandere, e621 and Rule34 wired up

@@ -37,6 +37,7 @@ services:
     image: booru-scraper:latest
     container_name: booru-scraper
     restart: unless-stopped
+    stop_grace_period: 30s
 
     depends_on:
       database:

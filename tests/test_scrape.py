@@ -577,3 +577,25 @@ def test_local_time_follows_tz(monkeypatch):
     finally:
         monkeypatch.undo()
         time.tzset()
+
+
+def test_a_restart_marks_the_run_interrupted_and_keeps_its_log(monkeypatch, fake_db):
+    class SlowSource(FakeSource):
+        async def search_posts(self, **kwargs):
+            await asyncio.Event().wait()
+            yield
+
+    monkeypatch.setitem(main.SOURCES, "fake", SlowSource())
+
+    async def scenario():
+        job = main.Job()
+        job.task = asyncio.create_task(main.run_scrape("run", job, main.ScrapeSpec(source="fake", limit=1)))
+        await asyncio.sleep(0.01)
+        job.stop("interrupted")
+        await job.task
+        return job
+
+    job = asyncio.run(scenario())
+    assert fake_db.runs[1] == "interrupted"
+    assert job.events[-1] == {"status": "interrupted"}
+    assert any(line["message"] == "Interrupted" for line in job.lines)

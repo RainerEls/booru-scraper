@@ -268,6 +268,7 @@ select { cursor: pointer; appearance: none;
   border-color: #7f1d1d;
 }
 .status-badge--stopped,
+.status-badge--interrupted,
 .status-badge--skipped {
   color: var(--amber); background: var(--amber-dim);
   border-color: #78350f;
