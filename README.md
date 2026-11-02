@@ -1,7 +1,7 @@
 # booru-scraper
 
 <!-- BADGES:START -->
-[![tests](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/actions/workflows/tests.yml/badge.svg)](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/actions/workflows/tests.yml) [Open tracker issues](https://gitea.rkahome.work/SleepyShoggoth/homelab-tracker/issues?q=booru-scraper&type=all&state=open) [Pending Renovate PRs](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/pulls?type=all&state=open&q=renovate)
+[![tests](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/actions/workflows/tests.yml/badge.svg)](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/actions/workflows/tests.yml) [![Latest release](https://img.shields.io/badge/release-v0.2.0-blue)](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/releases/latest) [Open tracker issues](https://gitea.rkahome.work/SleepyShoggoth/homelab-tracker/issues?q=booru-scraper&type=all&state=open) [Pending Renovate PRs](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/pulls?type=all&state=open&q=renovate)
 <!-- BADGES:END -->
 
 Pull posts from booru-style image boards into your self-hosted [szurubooru](https://github.com/rr-/szurubooru). Start a scrape from your browser, watch it live, and let the app handle tags and duplicates.
@@ -79,7 +79,9 @@ To build the image from source instead, run `docker compose up -d --build`.
 ## Recent changes
 
 <!-- CHANGES:START -->
-_No releases yet._ [Releases](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/releases)
+- [`v0.2.0`](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/releases/tag/v0.2.0) (2026-11-02) — Merge pull request 'chore: run the published 0.2.0 image' (#61) from chore/publish-0.2.0 into main
+
+[All releases](https://gitea.rkahome.work/SleepyShoggoth/booru-scraper/releases)
 <!-- CHANGES:END -->
 
 ## Contributing
