@@ -1,5 +1,6 @@
 import asyncio
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -20,8 +21,9 @@ class FakeDb:
         self.runs[1] = "running"
         return 1
 
-    async def update_run(self, id, total, processed, skipped, failed, status):
+    async def update_run(self, id, status, log, failed_posts, **counters):
         self.runs[id] = status
+        self.saved = {"log": log, "failed_posts": failed_posts}
 
     async def post_exists(self, source, source_post_id):
         return (source, source_post_id) in self.posts
@@ -69,7 +71,8 @@ class FakeSource(BooruSource):
         return None
 
     async def grab_tags(self, tags):
-        return [{"name": name, "category": "general"} for name in self.tags]
+        for name in self.tags:
+            yield {"name": name, "category": "general"}
 
 
 def fake_post(id=1, tags="cat"):
@@ -109,7 +112,7 @@ def run_job():
 def scrape(monkeypatch, source, limit=10):
     monkeypatch.setitem(main.SOURCES, "fake", source)
     job = run_job()
-    asyncio.run(main.run_scrape("job", job, limit, "fake", None, None, None))
+    asyncio.run(main.run_scrape("job", job, main.ScrapeSpec("fake", limit)))
     return job.events
 
 
@@ -152,7 +155,7 @@ def test_the_shared_blacklist_applies_to_every_scrape(monkeypatch, fake_db):
     source = FakeSource([])
     monkeypatch.setitem(main.SOURCES, "fake", source)
 
-    asyncio.run(main.run_scrape("job", run_job(), 1, "fake", None, "dog cat", None))
+    asyncio.run(main.run_scrape("job", run_job(), main.ScrapeSpec("fake", 1, blacklist_tags="dog cat")))
 
     assert source.blacklist == "gore dog cat"
 
@@ -201,6 +204,85 @@ def test_a_source_without_its_keys_is_refused(monkeypatch):
 
     assert client.post("/scrape", json={"source": "gelbooru", "limit": 1}).status_code == 422
     assert next(s for s in client.get("/api/sources").json() if s["name"] == "gelbooru")["configured"] is False
+
+
+def test_stopping_keeps_synced_tags_and_releases_claims(monkeypatch, fake_db):
+    class Slow(FakeSource):
+        async def grab_tags(self, tags):
+            yield {"name": "synced", "category": "general"}
+            await asyncio.sleep(60)
+            yield {"name": "never", "category": "general"}
+
+    def handler(request):
+        return httpx.Response(404 if request.method == "GET" else 200, json={})
+
+    use_szurubooru(monkeypatch, handler)
+    monkeypatch.setitem(main.SOURCES, "fake", Slow([fake_post()]))
+
+    async def run():
+        job = main.Job()
+        job.task = asyncio.create_task(main.run_scrape("job", job, main.ScrapeSpec("fake", 5)))
+        while "synced" not in fake_db.tags:
+            await asyncio.sleep(0)
+        job.stop()
+        job.stop()
+        await job.task
+        return job
+
+    job = asyncio.run(run())
+
+    assert job.finished
+    assert job.events[-1] == {"status": "stopped"}
+    assert fake_db.runs[1] == "stopped"
+    assert fake_db.tags == {"synced"}
+    assert ("fake", 1) not in fake_db.posts
+    assert fake_db.saved["log"][-1] == {"level": "warning", "message": "Stopped"}
+
+
+def test_a_run_keeps_its_log_and_failed_posts(monkeypatch, fake_db):
+    use_szurubooru(monkeypatch, lambda request: httpx.Response(500, json={"name": "ServerError"}))
+
+    scrape(monkeypatch, FakeSource([fake_post(3)]))
+
+    assert fake_db.saved["failed_posts"] == [3]
+    assert any("ServerError" in line["message"] for line in fake_db.saved["log"])
+
+
+def test_retrying_looks_posts_up_by_id(monkeypatch, fake_db):
+    class ById(FakeSource):
+        async def search_posts(self, tags="", blacklist_tags="", rating=None):
+            yield fake_post(int(tags.removeprefix("id:")))
+
+    monkeypatch.setattr("app.sources.base.ID_LOOKUP_DELAY", 0)
+    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"id": 7}))
+    monkeypatch.setitem(main.SOURCES, "fake", ById([]))
+    job = run_job()
+
+    asyncio.run(main.run_scrape("job", job, main.ScrapeSpec("fake", 2, post_ids=[4, 9])))
+
+    assert job.events[-2]["processed"] == 2
+    assert set(fake_db.posts) == {("fake", 4), ("fake", 9)}
+
+
+def test_retry_route_clears_rejections_and_starts_a_job(monkeypatch, fake_db):
+    released = []
+    started = []
+
+    async def get_run(id):
+        return SimpleNamespace(source="gelbooru", failed_posts=[4, 9]) if id == 1 else None
+
+    async def release_rejected(source, ids):
+        released.append((source, ids))
+
+    monkeypatch.setattr(fake_db, "get_run", get_run, raising=False)
+    monkeypatch.setattr(fake_db, "release_rejected", release_rejected, raising=False)
+    monkeypatch.setattr(main, "start_job", lambda spec: started.append(spec) or "job")
+    client = TestClient(main.app)
+
+    assert client.post("/api/runs/2/retry").status_code == 404
+    assert client.post("/api/runs/1/retry").json() == {"job_id": "job"}
+    assert released == [("gelbooru", [4, 9])]
+    assert started[0].post_ids == [4, 9]
 
 
 def test_limit_counts_new_posts_not_known_ones(monkeypatch, fake_db):

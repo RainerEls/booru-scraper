@@ -3,7 +3,7 @@ import logging
 
 import httpx
 import pytest
-from helpers import collect, mock_client
+from helpers import collect, mock_client, tags_of
 
 from app.http import ApiError
 from app.sources import gelbooru
@@ -153,7 +153,7 @@ def test_tag_lookup_with_no_matches_returns_nothing(monkeypatch):
         return httpx.Response(200, json={"@attributes": {"count": 0}})
 
     monkeypatch.setattr(gelbooru, "session", gelbooru_client(handler))
-    assert asyncio.run(GelbooruSource().grab_tags({"unknown"})) == []
+    assert tags_of(GelbooruSource(), {"unknown"}) == []
 
 
 def test_http_errors_do_not_expose_the_api_key(monkeypatch):

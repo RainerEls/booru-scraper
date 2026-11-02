@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Annotated, Literal
 
 import httpx
@@ -46,6 +47,9 @@ class Job:
         self.counters = {"processed": 0, "skipped": 0, "failed": 0, "total": 0}
         self.progress = {"phase": "Starting", "done": 0, "goal": 0}
         self.failures = []
+        self.lines = []
+        self.task = None
+        self.stopping = False
 
     def publish(self, event):
         self.events.append(event)
@@ -68,6 +72,7 @@ class Job:
         if level == "debug":
             self.publish(self.state())
         else:
+            self.lines.append({"level": level, "message": message})
             self.publish({**self.state(), "log": message, "level": level})
 
     def count(self, field, message, level="debug"):
@@ -77,6 +82,11 @@ class Job:
     def error(self, message):
         self.status = "error"
         self.log("error", message)
+
+    def stop(self):
+        if self.task and not self.stopping:
+            self.stopping = True
+            self.task.cancel()
 
     def finish(self):
         self.finished = True
@@ -92,8 +102,21 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    for job in jobs.values():
+        job.stop()
+    await asyncio.gather(*[job.task for job in jobs.values() if job.task], return_exceptions=True)
     await http.close_clients()
     await db.close_db()
+
+
+@dataclass
+class ScrapeSpec:
+    source: str
+    limit: int
+    tags: str = ""
+    blacklist_tags: str = ""
+    rating: str | None = None
+    post_ids: list | None = None
 
 
 class Scrape(BaseModel):
@@ -155,6 +178,7 @@ async def process_post(source, db_entry, post, semaphore, job):
                 )
         except Exception as e:
             logger.exception(f"Unhandled exception processing post {post['id']}")
+            job.failures.append({"id": post["id"], "error": repr(e), "url": post["file_url"], "tags": post["tags"]})
             job.count("failed", f"Unhandled error for post {post['id']}: {e!r}", "error")
         finally:
             job.advance()
@@ -175,19 +199,23 @@ async def claim_if_new(job, source_name, post):
     return db_entry
 
 
-async def find_new_posts(job, source_name, search, limit, new_posts):
-    source = SOURCES[source_name]
-    job.start_phase("Searching", limit)
+async def find_new_posts(job, spec, new_posts):
+    source = SOURCES[spec.source]
+    if spec.post_ids:
+        posts = source.posts_by_id(spec.post_ids)
+    else:
+        posts = source.search_posts(tags=spec.tags, blacklist_tags=spec.blacklist_tags, rating=spec.rating)
+    job.start_phase("Searching", spec.limit)
     try:
-        async for post in source.search_posts(**search):
+        async for post in posts:
             job.count("total", f"Found post {post['id']}")
-            db_entry = await claim_if_new(job, source_name, post)
+            db_entry = await claim_if_new(job, spec.source, post)
             if db_entry is None:
                 continue
             post["notes"] = await source.grab_notes(post)
             new_posts.append((db_entry, post))
             job.advance()
-            if len(new_posts) >= limit:
+            if len(new_posts) >= spec.limit:
                 return
     except Exception as e:
         logger.exception("Search failed")
@@ -201,9 +229,8 @@ async def sync_unknown_tags(job, source, new_posts):
     if not unknown_tags:
         return
 
-    new_tags = await source.grab_tags(unknown_tags)
-    job.start_phase("Syncing tags", len(new_tags))
-    for tag in new_tags:
+    job.start_phase("Syncing tags", len(unknown_tags))
+    async for tag in source.grab_tags(unknown_tags):
         try:
             await szurubooru.sync_tag(tag["name"], tag["category"])
         except httpx.HTTPError as e:
@@ -224,21 +251,22 @@ def report_failures(job):
         job.log("warning", f"    tags: {failure['tags']}")
 
 
-async def run_scrape(run_id, job, limit, source_name, tags, blacklist_tags, rating):
-    source = SOURCES[source_name]
+async def run_scrape(run_id, job, spec):
+    source = SOURCES[spec.source]
     new_posts = []
-    blacklist_tags = " ".join(dict.fromkeys(f"{config.BLACKLIST_TAGS} {blacklist_tags or ''}".split()))
-    search = {"tags": tags or "", "blacklist_tags": blacklist_tags, "rating": rating}
+    spec.blacklist_tags = " ".join(dict.fromkeys(f"{config.BLACKLIST_TAGS} {spec.blacklist_tags}".split()))
     run = None
-    logger.info(f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist: [{blacklist_tags}]")
+    logger.info(f"Scrape started: {spec}")
 
     try:
-        run = await db.create_run(run_id, source_name, tags, blacklist_tags, rating, limit, "running")
+        run = await db.create_run(
+            run_id, spec.source, spec.tags, spec.blacklist_tags, spec.rating, spec.limit, "running"
+        )
         run_log.set(job.log)
         if source.slow_tag_lookup and await db.count_tags() < FEW_KNOWN_TAGS:
             job.log(
                 "warning",
-                f"{source_name} is rate limited and looks up many tags one at a time, "
+                f"{spec.source} is rate limited and looks up many tags one at a time, "
                 "so runs on a fresh instance can be slow until more tags are known.",
             )
         try:
@@ -246,14 +274,17 @@ async def run_scrape(run_id, job, limit, source_name, tags, blacklist_tags, rati
         except httpx.HTTPError as e:
             job.log("warning", f"Could not set up tag categories: {e!r}")
 
-        job.log("info", f"Searching {source_name}")
-        await find_new_posts(job, source_name, search, limit, new_posts)
+        job.log("info", f"Searching {spec.source}")
+        await find_new_posts(job, spec, new_posts)
         await sync_unknown_tags(job, source, new_posts)
 
         job.start_phase("Uploading", len(new_posts))
         semaphore = asyncio.Semaphore(config.CONCURRENT_UPLOADS)
         await asyncio.gather(*[process_post(source, entry, post, semaphore, job) for entry, post in new_posts])
         job.log("info", " - ".join(f"{field.title()}: {count}" for field, count in job.counters.items()))
+    except asyncio.CancelledError:
+        job.status = "stopped"
+        job.log("warning", "Stopped")
     except Exception as e:
         logger.exception("Scrape failed")
         job.error(f"Scrape failed: {e!r}")
@@ -261,7 +292,13 @@ async def run_scrape(run_id, job, limit, source_name, tags, blacklist_tags, rati
         await db.release_claims([entry for entry, _ in new_posts])
         report_failures(job)
         if run is not None:
-            await db.update_run(run, **job.counters, status=job.status)
+            await db.update_run(
+                run,
+                **job.counters,
+                status=job.status,
+                log=job.lines,
+                failed_posts=[failure["id"] for failure in job.failures],
+            )
         job.finish()
 
 
@@ -349,23 +386,48 @@ async def scrape_progress(job: Annotated[Job, Depends(get_job)]):
         await job.updated.wait()
 
 
-@app.post("/scrape")
-async def scrape(background_tasks: BackgroundTasks, scrape_request: Scrape):
-    if not SOURCES[scrape_request.source].configured:
-        raise HTTPException(status_code=422, detail=f"{scrape_request.source} needs its credentials in .env")
+def start_job(spec):
     for job_id in [job_id for job_id, job in jobs.items() if job.finished]:
         del jobs[job_id]
     job_id = str(uuid.uuid4())
     job = Job()
     jobs[job_id] = job
-    background_tasks.add_task(
-        run_scrape,
-        job_id,
-        job,
-        scrape_request.limit,
-        scrape_request.source,
-        " ".join((scrape_request.tags or "").split()),
-        " ".join((scrape_request.blacklist_tags or "").split()),
-        scrape_request.rating or None,
+    job.task = asyncio.create_task(run_scrape(job_id, job, spec))
+    return job_id
+
+
+@app.post("/scrape")
+async def scrape(scrape_request: Scrape):
+    if not SOURCES[scrape_request.source].configured:
+        raise HTTPException(status_code=422, detail=f"{scrape_request.source} needs its credentials in .env")
+    spec = ScrapeSpec(
+        source=scrape_request.source,
+        limit=scrape_request.limit,
+        tags=" ".join((scrape_request.tags or "").split()),
+        blacklist_tags=scrape_request.blacklist_tags or "",
+        rating=scrape_request.rating or None,
     )
-    return {"job_id": job_id}
+    return {"job_id": start_job(spec)}
+
+
+@app.post("/api/scrapes/{job_id}/stop", status_code=202)
+async def stop_scrape(job: Annotated[Job, Depends(get_job)]):
+    job.stop()
+    return {}
+
+
+@app.post("/api/runs/{run_id}/retry")
+async def retry_run(run_id: int):
+    run = await db.get_run(run_id)
+    if run is None or not run.failed_posts:
+        raise HTTPException(status_code=404, detail="That run has no failed posts")
+    if run.source not in SOURCES or not SOURCES[run.source].configured:
+        raise HTTPException(status_code=422, detail=f"{run.source} isn't available")
+    await db.release_rejected(run.source, run.failed_posts)
+    spec = ScrapeSpec(
+        source=run.source,
+        limit=len(run.failed_posts),
+        tags=f"Retry of run {run_id}",
+        post_ids=run.failed_posts,
+    )
+    return {"job_id": start_job(spec)}

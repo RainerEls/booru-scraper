@@ -1,7 +1,7 @@
 import asyncio
 
 import httpx
-from helpers import collect, mock_client
+from helpers import collect, mock_client, tags_of
 
 from app.sources import yandere
 from app.sources.yandere import YandereSource
@@ -42,7 +42,7 @@ def test_tag_types_come_from_the_search_results(monkeypatch):
     source = YandereSource()
     collect(source, **SEARCH)
 
-    tags = asyncio.run(source.grab_tags(["a_circle", "an_artist", "unseen"]))
+    tags = tags_of(source, ["a_circle", "an_artist", "unseen"])
 
     categories = {tag["name"]: tag["category"] for tag in tags}
     assert categories == {"a_circle": "copyright", "an_artist": "artist", "unseen": "general"}

@@ -1,7 +1,7 @@
 import asyncio
 
 import httpx
-from helpers import collect, mock_client
+from helpers import collect, mock_client, tags_of
 
 from app.sources import e621
 from app.sources.e621 import PAGE_SIZE, E621Source
@@ -78,7 +78,7 @@ def test_tag_groups_map_onto_szurubooru_categories(monkeypatch):
     source = E621Source()
     collect(source)
 
-    tags = asyncio.run(source.grab_tags(["cat", "an_artist", "a_helper", "felid", "hi_res"]))
+    tags = tags_of(source, ["cat", "an_artist", "a_helper", "felid", "hi_res"])
 
     assert {t["name"]: t["category"] for t in tags} == {
         "cat": "general",

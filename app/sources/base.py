@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from functools import partial
 
 MAX_SOURCE_LENGTH = 2048
+ID_LOOKUP_DELAY = 1.1
 
 _TAG_PAIRS = [
     (r"<b>|<strong>", r"</b>|</strong>", "**"),
@@ -130,8 +131,19 @@ class BooruSource(ABC):
         """Yield matching posts, newest first, fetching pages as they are consumed."""
 
     @abstractmethod
-    async def grab_tags(self, tags):
-        """Return the name and szurubooru category of each tag."""
+    def grab_tags(self, tags):
+        """Yield the name and szurubooru category of each tag, as they are found."""
+
+    async def find_post(self, post_id):
+        found = [post async for post in self.search_posts(tags=f"id:{post_id}")]
+        return found[0] if found else None
+
+    async def posts_by_id(self, post_ids):
+        for post_id in post_ids:
+            post = await self.find_post(post_id)
+            if post:
+                yield post
+            await asyncio.sleep(ID_LOOKUP_DELAY)
 
     async def grab_notes(self, post):
         return None
@@ -144,4 +156,5 @@ class PostTaggedSource(BooruSource):
         self.seen_categories = {}
 
     async def grab_tags(self, tags):
-        return [{"name": tag, "category": self.seen_categories.get(tag, "general")} for tag in tags]
+        for tag in tags:
+            yield {"name": tag, "category": self.seen_categories.get(tag, "general")}

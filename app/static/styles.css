@@ -157,6 +157,8 @@ select { cursor: pointer; appearance: none;
 }
 .btn--primary:hover { box-shadow: 0 0 0 4px var(--accent-glow); }
 .btn--primary:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.btn--danger { background: var(--red-dim); color: var(--red); padding: 4px 14px; font-size: 12px; }
+.btn--danger:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ── progress bar ────────────────────────────────────────────── */
 .progress-phase { font-size: 13px; color: var(--text-2); min-height: 20px; margin-bottom: 6px; }
@@ -259,6 +261,7 @@ select { cursor: pointer; appearance: none;
   color: var(--red); background: var(--red-dim);
   border-color: #7f1d1d;
 }
+.status-badge--stopped,
 .status-badge--skipped {
   color: var(--amber); background: var(--amber-dim);
   border-color: #78350f;
@@ -316,4 +319,6 @@ select { cursor: pointer; appearance: none;
 .check-detail { font-size: 13px; }
 .check-issues { list-style: none; margin-top: 8px; overflow-wrap: anywhere; }
 .check-issues li { padding: 4px 0; }
+.log--run { margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.retry-btn { margin-top: 10px; }
 .check-repull { margin-left: 6px; color: var(--text-2); font-weight: 500; }

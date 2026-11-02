@@ -76,6 +76,8 @@ class Runs(Base):
     failed: Mapped[int] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column()
     finished_at: Mapped[datetime] = mapped_column(nullable=True)
+    log: Mapped[list] = mapped_column(JSON, nullable=True)
+    failed_posts: Mapped[list] = mapped_column(JSON, nullable=True)
 
 
 class IntegrityChecks(Base):
@@ -159,6 +161,14 @@ async def store_tag(tag_name):
     await write(pg_insert(Tags).values(tag=tag_name).on_conflict_do_nothing(index_elements=["tag"]))
 
 
+async def release_rejected(source, source_post_ids):
+    await write(
+        delete(Posts).where(
+            Posts.source == source, Posts.source_post_id.in_(source_post_ids), Posts.status == "rejected"
+        )
+    )
+
+
 async def finish_post(id, status, szurubooru_post_id=None):
     await write(update(Posts).where(Posts.id == id).values(status=status, szurubooru_post_id=szurubooru_post_id))
 
@@ -218,9 +228,23 @@ async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, sta
         return run.id
 
 
-async def update_run(id, total, processed, skipped, failed, status):
+async def update_run(id, total, processed, skipped, failed, status, log, failed_posts):
     await write(
         update(Runs)
         .where(Runs.id == id)
-        .values(total=total, processed=processed, skipped=skipped, failed=failed, status=status, finished_at=utcnow())
+        .values(
+            total=total,
+            processed=processed,
+            skipped=skipped,
+            failed=failed,
+            status=status,
+            log=log,
+            failed_posts=failed_posts,
+            finished_at=utcnow(),
+        )
     )
+
+
+async def get_run(id):
+    async with Session() as session:
+        return await session.get(Runs, id)

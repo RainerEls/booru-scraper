@@ -130,7 +130,7 @@ class RepullSource(BooruSource):
             }
 
     async def grab_tags(self, tags):
-        return []
+        yield {}
 
     async def grab_notes(self, post):
         return None

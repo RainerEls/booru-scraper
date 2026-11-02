@@ -83,10 +83,9 @@ async def run_check(check_id):
 
 
 async def repull_post(issue, kind, source):
-    found = [post async for post in source.search_posts(tags=f"id:{issue['source_post_id']}")]
-    if not found:
+    post = await source.find_post(issue["source_post_id"])
+    if post is None:
         return "The source no longer has this post"
-    post = found[0]
     if kind == "damaged":
         await szurubooru.replace_content(issue["booru_post_id"], post["file_url"])
         return "File replaced"
