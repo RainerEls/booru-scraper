@@ -8,7 +8,7 @@ import httpx
 
 from app import config, db, notify, szurubooru
 from app.db import utcnow
-from app.http import run_log
+from app.http import REJECTED_STATUSES, CredentialsRejected, SetupProblem, describe, run_log
 from app.sources.danbooru import DanbooruSource
 from app.sources.e621 import E621Source
 from app.sources.gelbooru import GelbooruSource
@@ -118,6 +118,8 @@ async def process_post(source, db_entry, post, semaphore, job):
     async with semaphore:
         try:
             r = await szurubooru.upload_post(post, source.safety(post), source.source_links(post))
+            if r.status_code in REJECTED_STATUSES:
+                raise CredentialsRejected(szurubooru.BASE_URL, r.status_code)
             body = response_json(r)
 
             if r.status_code == 200:
@@ -140,10 +142,12 @@ async def process_post(source, db_entry, post, semaphore, job):
                     f"Post {post['id']} failed with status code: {r.status_code} {error_code} - {post['file_url']}",
                     "warning",
                 )
+        except SetupProblem:
+            raise
         except Exception as e:
             logger.exception(f"Unhandled exception processing post {post['id']}")
-            job.failures.append({"id": post["id"], "error": repr(e), "url": post["file_url"], "tags": post["tags"]})
-            job.count("failed", f"Unhandled error for post {post['id']}: {e!r}", "error")
+            job.failures.append({"id": post["id"], "error": describe(e), "url": post["file_url"], "tags": post["tags"]})
+            job.count("failed", f"Post {post['id']} failed: {describe(e)}", "error")
         finally:
             job.advance()
 
@@ -188,9 +192,11 @@ async def find_new_posts(job, spec, new_posts, duplicates):
             job.advance()
             if len(new_posts) >= spec.limit:
                 return
+    except SetupProblem:
+        raise
     except Exception as e:
         logger.exception("Search failed")
-        job.error(f"Search failed, continuing with the {len(new_posts)} new post(s) found: {e!r}")
+        job.error(f"Search failed, continuing with the {len(new_posts)} new post(s) found: {describe(e)}")
 
 
 async def sync_unknown_tags(job, source, posts):
@@ -205,7 +211,7 @@ async def sync_unknown_tags(job, source, posts):
         try:
             await szurubooru.sync_tag(tag["name"], tag["category"])
         except httpx.HTTPError as e:
-            job.log("warning", f"Tag {tag['name']} failed to sync: {e!r}")
+            job.log("warning", f"Tag {tag['name']} failed to sync: {describe(e)}")
         else:
             await db.store_tag(tag["name"])
         job.advance()
@@ -219,7 +225,7 @@ async def merge_duplicate(job, source, db_entry, post):
     try:
         await szurubooru.merge_into_post(booru_post, post["tags"].split(), source.source_links(post))
     except httpx.HTTPError as e:
-        job.log("warning", f"Post {post['id']} could not be merged into booru post {booru_post}, retried next run: {e!r}")
+        job.log("warning", f"Post {post['id']} could not be merged into booru post {booru_post}, retried next run: {describe(e)}")
     else:
         await db.finish_post(db_entry, "merged")
         job.log("info", f"Post {post['id']} merged into booru post {booru_post}")
@@ -270,6 +276,23 @@ async def notify_run(job, spec):
     await notify.send(event, "\n".join(lines))
 
 
+async def check_setup(name, source):
+    if not source.configured:
+        raise SetupProblem(f"{name} needs its API key and user id set in .env.")
+    await szurubooru.check_connection()
+
+
+async def upload_posts(job, source, new_posts):
+    job.start_phase("Uploading", len(new_posts))
+    semaphore = asyncio.Semaphore(config.CONCURRENT_UPLOADS)
+    try:
+        async with asyncio.TaskGroup() as group:
+            for entry, post in new_posts:
+                group.create_task(process_post(source, entry, post, semaphore, job))
+    except* SetupProblem as problems:
+        raise problems.exceptions[0] from None
+
+
 async def run_scrape(run_id, job, spec):
     source = SOURCES[spec.source]
     new_posts = []
@@ -290,6 +313,7 @@ async def run_scrape(run_id, job, spec):
             retry_of=spec.retry_of,
         )
         run_log.set(job.log)
+        await check_setup(spec.source, source)
         if source.slow_tag_lookup and await db.count_tags() < FEW_KNOWN_TAGS:
             job.log(
                 "warning",
@@ -299,15 +323,13 @@ async def run_scrape(run_id, job, spec):
         try:
             await szurubooru.ensure_tag_categories(source.tag_categories.values())
         except httpx.HTTPError as e:
-            job.log("warning", f"Could not set up tag categories: {e!r}")
+            job.log("warning", f"Could not set up tag categories: {describe(e)}")
 
         job.log("info", f"Searching {spec.source}")
         await find_new_posts(job, spec, new_posts, duplicates)
         await sync_unknown_tags(job, source, new_posts + duplicates)
 
-        job.start_phase("Uploading", len(new_posts))
-        semaphore = asyncio.Semaphore(config.CONCURRENT_UPLOADS)
-        await asyncio.gather(*[process_post(source, entry, post, semaphore, job) for entry, post in new_posts])
+        await upload_posts(job, source, new_posts)
         await merge_duplicates(job, source, duplicates)
         counters = job.counters
         job.log(
@@ -315,12 +337,14 @@ async def run_scrape(run_id, job, spec):
             f"Uploaded: {counters['processed']} - Skipped: {counters['skipped']} - "
             f"Failed: {counters['failed']} - Total: {counters['total']}",
         )
+    except SetupProblem as e:
+        job.error(f"Stopped: {e}")
     except asyncio.CancelledError:
         job.status = job.stop_status or "stopped"
         job.log("warning", job.status.capitalize())
     except Exception as e:
         logger.exception("Scrape failed")
-        job.error(f"Scrape failed: {e!r}")
+        job.error(f"Scrape failed: {describe(e)}")
     finally:
         await db.release_claims([entry for entry, _ in new_posts + duplicates])
         report_failures(job)
@@ -368,8 +392,7 @@ async def start_due_schedule():
     if active_jobs():
         return
     for schedule in await db.get_schedules():
-        source = SOURCES.get(schedule.source)
-        if schedule.enabled and source and source.configured and next_run(schedule) <= utcnow():
+        if schedule.enabled and schedule.source in SOURCES and next_run(schedule) <= utcnow():
             await start_schedule(schedule)
             return
 

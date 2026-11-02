@@ -36,10 +36,33 @@
   </header>
 
   <main class="page-wrap" id="content">
+    {% if request.url.path != '/login' and missing_szurubooru() %}
+    <p class="page-alert" role="alert">Szurubooru isn't set up, so nothing can be uploaded. Set {{ missing_szurubooru() | join(', ') }} in <code>.env</code> and restart.</p>
+    {% endif %}
+    <p class="page-alert hidden" id="page-error" role="alert"></p>
     {% block content %}{% endblock %}
   </main>
 
   <script>
+    async function apiCall(url, options) {
+      const pageError = document.getElementById('page-error');
+      pageError.classList.add('hidden');
+      let message;
+      try {
+        const res = await fetch(url, options);
+        if (res.ok) return res;
+        const { detail } = await res.json().catch(() => ({}));
+        if (typeof detail === 'string') message = detail;
+        else if (Array.isArray(detail)) message = detail.map(problem => `${problem.loc.at(-1)}: ${problem.msg}`).join('. ');
+        else message = `The request failed (HTTP ${res.status}).`;
+      } catch {
+        message = "Couldn't reach the app.";
+      }
+      pageError.textContent = message;
+      pageError.classList.remove('hidden');
+      return null;
+    }
+
     const themeButton = document.getElementById('theme');
     const THEME_NAMES = { '': 'Auto', light: 'Light', dark: 'Dark' };
     const NEXT_THEME = { '': 'light', light: 'dark', dark: '' };

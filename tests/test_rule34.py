@@ -4,6 +4,7 @@ import httpx
 import pytest
 from helpers import collect, mock_client, tags_of
 
+from app.http import CredentialsRejected
 from app.sources import gelbooru, rule34
 from app.sources.rule34 import PAGE_SIZE, Rule34Source
 
@@ -65,7 +66,14 @@ def test_no_matches_is_an_empty_body(monkeypatch):
 def test_a_refused_request_explains_itself(monkeypatch):
     use_rule34(monkeypatch, lambda request: httpx.Response(200, json="Missing authentication."))
 
-    with pytest.raises(RuntimeError, match="Missing authentication"):
+    with pytest.raises(CredentialsRejected, match="api.rule34.xxx refused"):
+        collect(Rule34Source(), tags="cat")
+
+
+def test_another_refusal_quotes_the_source(monkeypatch):
+    use_rule34(monkeypatch, lambda request: httpx.Response(200, json="Too many tags."))
+
+    with pytest.raises(RuntimeError, match="Too many tags"):
         collect(Rule34Source(), tags="cat")
 
 
@@ -126,7 +134,7 @@ def test_tag_lookup_escapes_names(monkeypatch):
 
 def test_a_failed_lookup_keeps_the_tags_already_found(monkeypatch):
     gelbooru_knows(monkeypatch, [])
-    responses = [httpx.Response(200, text='<tags><tag type="4"/></tags>')] + [httpx.Response(403)]
+    responses = [httpx.Response(200, text='<tags><tag type="4"/></tags>')] + [httpx.Response(404)]
     use_rule34(monkeypatch, lambda request: responses.pop(0))
 
     assert tags_of(Rule34Source(), ["first", "second"]) == [{"name": "first", "category": "character"}]

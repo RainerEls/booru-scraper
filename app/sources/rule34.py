@@ -9,7 +9,7 @@ from functools import partial
 import httpx
 
 from app import config, http
-from app.http import api_get, run_log
+from app.http import CredentialsRejected, api_get, describe, run_log
 from app.sources.base import BooruSource, dapi_pages_by_id, dapi_params, pages_by_number, xml_notes
 from app.sources.gelbooru import GelbooruSource
 
@@ -29,6 +29,8 @@ async def fetch_page(terms, page=0):
     # No matches is an empty body, and a refused request is a bare JSON string.
     body = r.json() if r.text.strip() else []
     if isinstance(body, str):
+        if "authentication" in body.lower():
+            raise CredentialsRejected(API_URL)
         raise RuntimeError(f"Rule34 refused the search: {body}")
     return body
 
@@ -74,13 +76,13 @@ class Rule34Source(BooruSource):
                 yield {"name": tag, "category": await self.category(tag)}
                 await asyncio.sleep(RATE_LIMIT)
         except httpx.HTTPError as e:
-            run_log.get()("warning", f"Tag lookup stopped, a later run will finish it: {e!r}")
+            run_log.get()("warning", f"Tag lookup stopped, a later run will finish it: {describe(e)}")
 
     async def tags_known_to_gelbooru(self, tags):
         try:
             known = [tag async for tag in GelbooruSource().grab_tags(tags)]
-        except (httpx.HTTPError, ValueError) as e:
-            run_log.get()("warning", f"Could not ask Gelbooru about tags: {e!r}")
+        except (httpx.HTTPError, ValueError, CredentialsRejected) as e:
+            run_log.get()("warning", f"Could not ask Gelbooru about tags: {describe(e)}")
             return []
         return [tag for tag in known if tag["name"] in tags]
 

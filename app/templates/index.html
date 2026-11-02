@@ -329,7 +329,7 @@
 
   stopBtn.addEventListener('click', function() {
     this.disabled = true;
-    fetch(`/api/scrapes/${currentJob}/stop`, { method: 'POST' });
+    apiCall(`/api/scrapes/${currentJob}/stop`, { method: 'POST' }).then(res => { if (!res) this.disabled = false; });
   });
 
   fetch('/api/scrapes/active')
@@ -349,30 +349,34 @@
   }
 
   function sendJson(url, method, body) {
-    return fetch(url, {
+    return apiCall(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
   }
 
+  function reloadIfDone(res) {
+    if (res) location.reload();
+  }
+
   document.getElementById('schedule-btn').addEventListener('click', function() {
     const interval_hours = parseInt(document.getElementById('interval_hours').value);
-    sendJson('/api/schedules', 'POST', { ...formValues(), interval_hours }).then(() => location.reload());
+    sendJson('/api/schedules', 'POST', { ...formValues(), interval_hours }).then(reloadIfDone);
   });
 
   document.querySelectorAll('[data-schedule]').forEach(row => {
     const url = `/api/schedules/${row.dataset.schedule}`;
     row.querySelector('.schedule-run').addEventListener('click', () => {
-      fetch(`${url}/run`, { method: 'POST' }).then(() => location.reload());
+      apiCall(`${url}/run`, { method: 'POST' }).then(reloadIfDone);
     });
     row.querySelector('.schedule-toggle').addEventListener('click', () => {
       const enabled = row.dataset.enabled !== 'true';
-      sendJson(url, 'PATCH', { enabled }).then(() => location.reload());
+      sendJson(url, 'PATCH', { enabled }).then(reloadIfDone);
     });
     row.querySelector('.schedule-delete').addEventListener('click', () => {
       if (confirm('Delete this schedule? Its past runs stay on the Activity page.')) {
-        fetch(url, { method: 'DELETE' }).then(() => location.reload());
+        apiCall(url, { method: 'DELETE' }).then(reloadIfDone);
       }
     });
   });
@@ -381,16 +385,8 @@
     e.preventDefault();
 
     sendJson('/scrape', 'POST', formValues())
-    .then(res => {
-      if (!res.ok) throw new Error(`Scrape request failed: ${res.status}`);
-      return res.json();
-    })
-    .then(data => followJob(data.job_id))
-    .catch(err => {
-      console.error(err);
-      progressSection.classList.remove('hidden');
-      setFinished('error', 'Failed');
-    });
+    .then(res => res && res.json())
+    .then(data => { if (data) followJob(data.job_id); });
   });
 </script>
 {% endblock %}

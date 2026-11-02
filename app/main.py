@@ -85,6 +85,7 @@ def repeatable(run):
 
 
 templates.env.globals["logged_in"] = auth.logged_in
+templates.env.globals["missing_szurubooru"] = config.missing_szurubooru
 templates.env.tests["repeatable"] = repeatable
 templates.env.filters["duration"] = duration
 templates.env.filters["local_time"] = local_time
@@ -185,6 +186,7 @@ async def activity(request: Request):
 
 @app.post("/api/integrity-checks", status_code=202)
 async def start_integrity_check(background_tasks: BackgroundTasks):
+    require_szurubooru()
     if check_busy(await db.get_checks()):
         raise HTTPException(status_code=409, detail="A check is already running")
     background_tasks.add_task(integrity.run_check, await db.create_check())
@@ -193,6 +195,7 @@ async def start_integrity_check(background_tasks: BackgroundTasks):
 
 @app.post("/api/integrity-checks/{check_id}/repull", status_code=202)
 async def start_repull(check_id: int, background_tasks: BackgroundTasks):
+    require_szurubooru()
     checks = await db.get_checks()
     if check_busy(checks):
         raise HTTPException(status_code=409, detail="A check is already running")
@@ -225,6 +228,11 @@ async def scrape_progress(job: Annotated[Job, Depends(get_job)]):
             if "status" in event:
                 return
         await job.updated.wait()
+
+
+def require_szurubooru():
+    if missing := config.missing_szurubooru():
+        raise HTTPException(status_code=422, detail=f"Set {', '.join(missing)} in .env first")
 
 
 def require_configured(source):
