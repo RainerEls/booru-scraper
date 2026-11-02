@@ -36,7 +36,7 @@
 
 /* ── reset / base ────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 14px; }
+html { font-size: 100%; }
 body {
   font-family: 'Inter', system-ui, sans-serif;
   background: var(--bg);
@@ -46,7 +46,7 @@ body {
 }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-button, select, input, textarea { font-family: inherit; font-size: 13px; }
+button, select, input, textarea { font-family: inherit; font-size: .9375rem; }
 .hidden { display: none !important; }
 .mono { font-family: var(--mono); }
 .page-wrap a { text-decoration: underline; }
@@ -56,11 +56,12 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
   overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
 .skip-link {
-  position: absolute; left: 12px; top: -48px; z-index: 200;
+  position: absolute; left: 12px; top: 8px; z-index: 200;
+  transform: translateY(-200%);
   padding: 8px 14px; border-radius: 6px;
   background: var(--accent-fill); color: #fff;
 }
-.skip-link:focus { top: 8px; }
+.skip-link:focus { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
@@ -69,7 +70,7 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
 .display { font-family: 'Space Grotesk', system-ui, sans-serif; }
 
 /* ── layout ──────────────────────────────────────────────────── */
-.page-wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+.page-wrap { max-width: 1240px; margin: 0 auto; padding: 0 20px; }
 
 /* ── topbar ──────────────────────────────────────────────────── */
 .topbar {
@@ -79,32 +80,32 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
   padding: 0 20px;
 }
 .topbar-inner {
-  max-width: 1100px; margin: 0 auto;
+  max-width: 1200px; margin: 0 auto;
   display: flex; align-items: center; gap: 16px;
-  height: 52px;
+  min-height: 52px;
 }
 .topbar-title {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 15px; font-weight: 700;
+  font-size: 1.0625rem; font-weight: 700;
   color: var(--text); flex: 1;
 }
 .topbar-title span { color: var(--accent); }
 
-.topbar-nav { display: flex; align-items: center; gap: 4px; }
+.topbar-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .nav-link {
   padding: 5px 12px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: .9375rem;
   font-weight: 500;
   color: var(--text-2);
   transition: color .15s, background .15s;
 }
 .nav-link:hover { color: var(--text); background: var(--card-hi); text-decoration: none; }
 .nav-link.active { color: var(--accent); background: var(--accent-dim); }
-.nav-button { display: block; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 500; line-height: inherit; cursor: pointer; }
-.theme-select { width: auto; padding: 4px 26px 4px 8px; font-size: 12px; background-position: right 7px center; }
-.login-card { max-width: 360px; margin: 48px auto 0; }
-.login-error { margin: 12px 0 0; font-size: 13px; color: var(--red); }
+.nav-button { display: block; border: 0; background: none; font: inherit; font-size: .9375rem; font-weight: 500; line-height: inherit; cursor: pointer; }
+.theme-select { width: auto; padding: 4px 26px 4px 8px; font-size: .875rem; background-position: right 7px center; }
+.login-card { max-width: 24rem; margin: 48px auto 0; }
+.login-error { margin: 12px 0 0; font-size: .9375rem; color: var(--red); }
 .login-card .form-actions { margin-top: 16px; }
 
 /* ── section headers ─────────────────────────────────────────── */
@@ -114,7 +115,7 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
 }
 .section-head h2 {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 11px; font-weight: 700; letter-spacing: .1em;
+  font-size: .8125rem; font-weight: 700; letter-spacing: .1em;
   text-transform: uppercase; color: var(--text-3);
   white-space: nowrap;
 }
@@ -136,10 +137,10 @@ button, select, input, textarea { font-family: inherit; font-size: 13px; }
   margin-bottom: 14px;
 }
 .form-group { display: flex; flex-direction: column; gap: 6px; flex: 1; }
-.form-group--narrow { max-width: 130px; }
+.form-group--narrow { max-width: 9rem; }
 
 label {
-  font-size: 11px; font-weight: 600;
+  font-size: .8125rem; font-weight: 600;
   letter-spacing: .06em; text-transform: uppercase;
   color: var(--text-2);
 }
@@ -173,16 +174,16 @@ select { cursor: pointer; appearance: none;
 
 .form-actions { margin-top: 6px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .form-actions__gap { flex: 1; }
-.form-actions label { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 500; }
-.form-actions input[type="number"] { width: 72px; }
-.field-hint { font-size: 12px; color: var(--text-2); }
+.form-actions label { text-transform: none; letter-spacing: 0; font-size: .9375rem; font-weight: 500; }
+.form-actions input[type="number"] { width: 5.5rem; }
+.field-hint { font-size: .875rem; color: var(--text-2); }
 
 /* ── button ──────────────────────────────────────────────────── */
 .btn {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 9px 20px;
   border-radius: 8px;
-  font-weight: 600; font-size: 13px;
+  font-weight: 600; font-size: .9375rem;
   border: none; cursor: pointer;
   transition: opacity .15s, box-shadow .15s;
 }
@@ -195,12 +196,12 @@ select { cursor: pointer; appearance: none;
 .btn--primary:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
 .btn--secondary { background: var(--card-hi); color: var(--text); border: 1px solid var(--border-hi); }
 .schedule-actions { white-space: nowrap; text-align: right; }
-.schedule-actions .btn { padding: 4px 10px; font-size: 12px; }
-.btn--danger { background: var(--red-dim); color: var(--red); padding: 4px 14px; font-size: 12px; }
+.schedule-actions .btn { padding: 4px 10px; font-size: .875rem; }
+.btn--danger { background: var(--red-dim); color: var(--red); padding: 4px 14px; font-size: .875rem; }
 .btn--danger:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ── progress bar ────────────────────────────────────────────── */
-.progress-phase { font-size: 13px; color: var(--text-2); min-height: 20px; margin-bottom: 6px; }
+.progress-phase { font-size: .9375rem; color: var(--text-2); min-height: 20px; margin-bottom: 6px; }
 .progress-bar-wrap {
   display: flex; align-items: center; gap: 10px;
   margin-bottom: 20px;
@@ -220,9 +221,9 @@ select { cursor: pointer; appearance: none;
 }
 .progress-pct {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: .875rem;
   color: var(--text-2);
-  min-width: 36px;
+  min-width: 3em;
   text-align: right;
 }
 
@@ -241,14 +242,14 @@ select { cursor: pointer; appearance: none;
 }
 .stat__value {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 22px; font-weight: 700;
+  font-size: 1.5rem; font-weight: 700;
   color: var(--text);
 }
 .stat__value--green { color: var(--green); }
 .stat__value--amber { color: var(--amber); }
 .stat__value--red   { color: var(--red); }
 .stat__label {
-  font-size: 11px; font-weight: 600;
+  font-size: .8125rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: .07em;
   color: var(--text-3);
 }
@@ -261,7 +262,7 @@ select { cursor: pointer; appearance: none;
 }
 .log {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: .875rem;
   background: var(--surface);
   padding: 12px;
   max-height: 220px;
@@ -280,10 +281,10 @@ select { cursor: pointer; appearance: none;
 /* ── status badge ────────────────────────────────────────────── */
 .status-badge {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 11px; font-weight: 700;
+  font-size: .8125rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .08em;
   display: inline-block; box-sizing: border-box;
-  width: 96px; padding: 3px 0;
+  min-width: 7.5rem; padding: 3px 8px;
   text-align: center; white-space: nowrap;
   border-radius: 99px;
   border: 1px solid;
@@ -310,7 +311,7 @@ select { cursor: pointer; appearance: none;
 /* ── history table ───────────────────────────────────────────── */
 .history-table {
   width: 100%; border-collapse: collapse;
-  font-size: 13px;
+  font-size: .9375rem;
 }
 .history-table thead tr {
   border-bottom: 1px solid var(--border);
@@ -318,7 +319,7 @@ select { cursor: pointer; appearance: none;
 .history-table th {
   padding: 10px;
   text-align: left;
-  font-size: 11px; font-weight: 700;
+  font-size: .8125rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .07em;
   color: var(--text-3);
   white-space: nowrap;
@@ -336,7 +337,7 @@ select { cursor: pointer; appearance: none;
 .history-table td.green { color: var(--green); }
 .history-table td.amber { color: var(--amber); }
 .history-table td.red   { color: var(--red); }
-.time-cell { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.time-cell { color: var(--text-3); font-size: .875rem; white-space: nowrap; }
 .tags-cell {
   min-width: 100px; max-width: 220px;
   white-space: normal; word-break: break-word;
@@ -351,23 +352,23 @@ select { cursor: pointer; appearance: none;
 /* ── empty state ─────────────────────────────────────────────── */
 .empty-state {
   text-align: center; padding: 40px 20px;
-  color: var(--text-2); font-size: 13px;
+  color: var(--text-2); font-size: .9375rem;
 }
 
 /* ── integrity checks ────────────────────────────────────────── */
-.section-note { color: var(--text-3); font-size: 13px; margin-bottom: 12px; }
-.check-detail { font-size: 13px; }
+.section-note { color: var(--text-3); font-size: .9375rem; margin-bottom: 12px; }
+.check-detail { font-size: .9375rem; }
 .check-issues { list-style: none; margin-top: 8px; overflow-wrap: anywhere; }
 .check-issues li { padding: 4px 0; }
 .log--run { margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; }
-.run-action { margin-top: 10px; padding: 4px 10px; font-size: 12px; }
+.run-action { margin-top: 10px; padding: 4px 10px; font-size: .875rem; }
 .check-repull { margin-left: 6px; color: var(--text-2); font-weight: 500; }
 
 /* ── small screens ───────────────────────────────────────────── */
-@media (max-width: 640px) {
+@media (max-width: 40em) {
   .page-wrap { padding: 0 16px; }
   .topbar { padding: 0 16px; }
-  .topbar-inner { gap: 8px; flex-wrap: wrap; height: auto; min-height: 52px; padding: 8px 0; }
+  .topbar-inner { gap: 8px; flex-wrap: wrap; padding: 8px 0; }
   .nav-link { padding: 5px 8px; }
   .form-row { flex-direction: column; }
   .form-group--narrow { max-width: none; }
