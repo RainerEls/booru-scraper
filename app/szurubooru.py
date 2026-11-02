@@ -5,7 +5,7 @@ from urllib.parse import quote, urljoin
 import httpx
 
 from app import config, http
-from app.http import ApiError, SetupProblem, api_get
+from app.http import REJECTED_STATUSES, ApiError, SetupProblem, api_get
 from app.sources.base import MAX_SOURCE_LENGTH
 
 RATE_LIMIT = config.rate_limit("SZURUBOORU")
@@ -24,8 +24,8 @@ async def check_connection():
     if missing := config.missing_szurubooru():
         raise SetupProblem(f"Szurubooru isn't set up. Set {', '.join(missing)} in .env.")
     try:
-        r = await api_get(session, f"{BASE_URL}/tag-categories")
-        r.json()["results"]
+        r = await api_get(session, f"{BASE_URL}/info")
+        r.json()["config"]
     except ApiError as e:
         raise SetupProblem(
             f"Szurubooru answered HTTP {e.status}. Check SZURUBOORU_BASE_URL and SZURUBOORU_USER_ID in .env."
@@ -79,7 +79,11 @@ async def update_tag(tag_name, tag_category, version):
 async def sync_tag(tag_name, tag_category):
     await asyncio.sleep(RATE_LIMIT)
     existing = await get_tag(tag_name)
+    if existing.status_code in REJECTED_STATUSES:
+        existing.raise_for_status()
     if existing.status_code == 200:
+        if existing.json().get("category") == tag_category:
+            return
         r = await update_tag(tag_name, tag_category, existing.json()["version"])
     else:
         r = await create_tag(tag_name, tag_category)

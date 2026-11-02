@@ -30,7 +30,7 @@ def booru(monkeypatch, handler):
 
 
 def categories_ok(request):
-    return httpx.Response(200, json={"results": []})
+    return httpx.Response(200, json={"results": [], "config": {}})
 
 
 def error_lines(job):
@@ -147,6 +147,48 @@ def test_a_bad_szurubooru_token_stops_before_searching(monkeypatch, fake_db):
     assert "szurubooru.test refused the request (HTTP 403)" in error_lines(job)[0]
 
 
+def test_a_private_instance_account_that_cannot_list_categories_still_uploads(monkeypatch, fake_db):
+    def handler(request):
+        url = str(request.url)
+        if url.endswith("/info"):
+            return httpx.Response(200, json={"config": {}})
+        if url.endswith("/posts/"):
+            return httpx.Response(200, json={"id": 7})
+        return httpx.Response(403, json={"name": "AuthError"})
+
+    booru(monkeypatch, handler)
+
+    job = run_job(monkeypatch, FakeSource([fake_post(tags="cat")], ["cat"]))
+
+    assert job.status == "done"
+    assert job.counters["processed"] == 1
+    assert warnings_of(job) == [
+        "The szurubooru account can't manage tag categories, so missing ones won't be created.",
+        "The szurubooru account can't read or create tags, so no tags will be written.",
+    ]
+
+
+def test_a_duplicate_upload_without_edit_rights_is_skipped_not_fatal(monkeypatch, fake_db):
+    def handler(request):
+        url = str(request.url)
+        if url.endswith("/posts/"):
+            return httpx.Response(400, json={"name": "PostAlreadyUploadedError", "otherPostId": 12})
+        if "/post/12" in url:
+            return httpx.Response(403, json={"name": "AuthError"})
+        return httpx.Response(404 if "/tag/" in url else 200, json={"results": [], "config": {}})
+
+    booru(monkeypatch, handler)
+    source = FakeSource([fake_post(1), fake_post(2)], [])
+    source.post_page = "http://fake.test/{id}"
+
+    job = run_job(monkeypatch, source)
+
+    assert job.status == "done"
+    assert job.counters["skipped"] == 2
+    assert warnings_of(job) == [scrape.NO_POST_EDITS]
+    assert fake_db.posts[("fake", 1)]["status"] == "skipped"
+
+
 def test_a_key_rejected_during_the_search_stops_the_run(monkeypatch, fake_db):
     class Rejected(FakeSource):
         async def search_posts(self, **kwargs):
@@ -180,7 +222,7 @@ def test_a_rejected_upload_cancels_the_rest_of_the_run(monkeypatch, fake_db):
         if str(request.url).endswith("/posts/"):
             uploads.append(request)
             return httpx.Response(403, json={"name": "AuthError"})
-        return httpx.Response(200, json={"results": [], "version": 1})
+        return httpx.Response(200, json={"results": [], "version": 1, "config": {}})
 
     booru(monkeypatch, handler)
     source = FakeSource([fake_post(id) for id in range(1, 6)])
@@ -203,7 +245,7 @@ def test_a_search_error_reads_plainly_and_keeps_the_posts_found(monkeypatch, fak
     def handler(request):
         if request.method == "POST":
             return httpx.Response(200, json={"id": 7})
-        return httpx.Response(200, json={"results": [], "version": 1})
+        return httpx.Response(200, json={"results": [], "version": 1, "config": {}})
 
     booru(monkeypatch, handler)
 
@@ -288,3 +330,100 @@ def test_retries_still_apply_before_giving_up(monkeypatch):
         asyncio.run(api_get(mock_client(handler), "http://source.test/posts"))
 
     assert len(calls) == 2
+
+
+def tag_booru(monkeypatch, existing=(), post_tag=200, put_tag=200, post_status=200):
+    calls = []
+
+    def handler(request):
+        url = str(request.url)
+        calls.append((request.method, url))
+        if "/tag/" in url:
+            name = url.rsplit("/", 1)[1]
+            if request.method == "PUT":
+                return httpx.Response(put_tag, json={})
+            if name in existing:
+                return httpx.Response(200, json={"version": 1, "category": existing[name]})
+            return httpx.Response(404, json={})
+        if url.endswith("/tags"):
+            return httpx.Response(post_tag, json={})
+        if url.endswith("/posts/"):
+            return httpx.Response(post_status, json={"id": 7})
+        return categories_ok(request)
+
+    booru(monkeypatch, handler)
+    return calls
+
+
+def warnings_of(job):
+    return [line["message"] for line in job.lines if line["level"] == "warning"]
+
+
+def test_a_tag_with_the_right_category_is_not_written(monkeypatch, fake_db):
+    calls = tag_booru(monkeypatch, existing={"cat": "general"})
+
+    run_job(monkeypatch, FakeSource([fake_post(tags="cat")], ["cat"]))
+
+    assert not [call for call in calls if call[0] == "PUT"]
+    assert "cat" in fake_db.tags
+
+
+def test_no_edit_permission_warns_once_and_still_creates_new_tags(monkeypatch, fake_db):
+    existing = {"a": "artist", "b": "artist", "c": "artist"}
+    calls = tag_booru(monkeypatch, existing=existing, put_tag=403)
+
+    job = run_job(monkeypatch, FakeSource([fake_post(tags="a b c new")], ["a", "b", "c", "new"]))
+
+    assert warnings_of(job) == ["The szurubooru account can't edit tags, so existing tags keep their category."]
+    assert ("POST", "http://szurubooru.test/api/tags") in calls
+    assert fake_db.tags == {"a", "b", "c", "new"}
+    assert job.counters["processed"] == 1
+    assert job.status == "done"
+
+
+def test_no_create_permission_warns_once_and_stops_writing_tags(monkeypatch, fake_db):
+    calls = tag_booru(monkeypatch, post_tag=403)
+
+    job = run_job(monkeypatch, FakeSource([fake_post(tags="a b c")], ["a", "b", "c"]))
+
+    assert warnings_of(job) == ["The szurubooru account can't read or create tags, so no tags will be written."]
+    assert len([call for call in calls if call == ("POST", "http://szurubooru.test/api/tags")]) == 1
+    assert not fake_db.tags
+    assert job.counters["processed"] == 1
+
+
+def merge_setup(monkeypatch, fake_db, handler, count=3):
+    fake_db.posts[("other", 9)] = {"md5": "same", "status": "processed", "szurubooru_post_id": 7}
+    posts = [{**fake_post(id, tags="dog"), "md5": "same"} for id in range(1, count + 1)]
+    source = FakeSource(posts, ["dog"])
+    source.post_page = "http://fake.test/{id}"
+    booru(monkeypatch, handler)
+    return run_job(monkeypatch, source)
+
+
+def test_no_post_edit_permission_warns_once_and_keeps_duplicates_for_later(monkeypatch, fake_db):
+    def handler(request):
+        if "/tag/" in str(request.url):
+            return httpx.Response(404, json={})
+        if request.method == "PUT" and "/post/" in str(request.url):
+            return httpx.Response(403, json={})
+        if "/post/" in str(request.url):
+            return httpx.Response(200, json={"version": 1, "tags": [], "source": None})
+        return categories_ok(request)
+
+    job = merge_setup(monkeypatch, fake_db, handler)
+
+    assert warnings_of(job) == ["The szurubooru account can't edit posts, so duplicates won't be merged."]
+    assert ("fake", 1) not in fake_db.posts
+
+
+def test_a_duplicate_of_a_deleted_booru_post_is_not_retried(monkeypatch, fake_db):
+    def handler(request):
+        if "/post/" in str(request.url) or "/tag/" in str(request.url):
+            return httpx.Response(404, json={})
+        return categories_ok(request)
+
+    job = merge_setup(monkeypatch, fake_db, handler, count=1)
+
+    assert fake_db.posts[("fake", 1)]["status"] == "skipped"
+    assert not warnings_of(job)
