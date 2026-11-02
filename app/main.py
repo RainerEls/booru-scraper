@@ -61,8 +61,7 @@ class Job:
         self.failures = []
         self.lines = []
         self.task = None
-        self.stopping = False
-        self.stop_status = "stopped"
+        self.stop_status = None
 
     def publish(self, event):
         self.events.append(event)
@@ -97,8 +96,7 @@ class Job:
         self.log("error", message)
 
     def stop(self, status="stopped"):
-        if self.task and not self.stopping:
-            self.stopping = True
+        if self.task and self.stop_status is None:
             self.stop_status = status
             self.task.cancel()
 
@@ -238,15 +236,14 @@ async def claim_if_new(job, source_name, post, duplicates):
     if await db.post_exists(source_name, post["id"]):
         job.count("skipped", f"{source_name}: {post['id']} already exists in DB, skipping")
         return None
-    if await db.md5_exists(post["md5"]):
-        db_entry = await db.claim_post(**claim, status="queued")
-        if db_entry is not None:
-            duplicates.append((db_entry, post))
-        job.count("skipped", f"MD5 {post['md5']} already exists in DB, will merge post {post['id']} into it")
-        return None
+    is_duplicate = await db.md5_exists(post["md5"])
     db_entry = await db.claim_post(**claim, status="queued")
     if db_entry is None:
         job.count("skipped", f"{source_name}: {post['id']} is already claimed by another run, skipping")
+    elif is_duplicate:
+        duplicates.append((db_entry, post))
+        job.count("skipped", f"MD5 {post['md5']} already exists in DB, will merge post {post['id']} into it")
+        return None
     return db_entry
 
 
@@ -366,15 +363,14 @@ async def run_scrape(run_id, job, spec):
 
     try:
         run = await db.create_run(
-            run_id,
-            spec.source,
-            spec.tags,
-            spec.blacklist_tags,
-            spec.rating,
-            spec.limit,
-            "running",
-            spec.schedule_id,
-            spec.retry_of,
+            uuid=run_id,
+            source=spec.source,
+            tags=spec.tags,
+            blacklist_tags=spec.blacklist_tags,
+            rating=spec.rating,
+            post_limit=spec.limit,
+            schedule_id=spec.schedule_id,
+            retry_of=spec.retry_of,
         )
         run_log.set(job.log)
         if source.slow_tag_lookup and await db.count_tags() < FEW_KNOWN_TAGS:
@@ -398,7 +394,7 @@ async def run_scrape(run_id, job, spec):
         await merge_duplicates(job, source, duplicates)
         job.log("info", " - ".join(f"{field.title()}: {count}" for field, count in job.counters.items()))
     except asyncio.CancelledError:
-        job.status = job.stop_status
+        job.status = job.stop_status or "stopped"
         job.log("warning", job.status.capitalize())
     except Exception as e:
         logger.exception("Scrape failed")

@@ -102,12 +102,7 @@ class RequireLogin:
         if scope["type"] == "lifespan" or not enabled():
             await self.app(scope, receive, send)
             return
-        connection = HTTPConnection(scope)
-        if scope["type"] == "websocket":
-            allowed = logged_in(connection) and same_origin(connection)
-            response = None if allowed else WebSocketClose()
-        else:
-            response = refusal(connection, scope["method"])
+        response = WebSocketClose() if scope["type"] == "websocket" else refusal(HTTPConnection(scope), scope["method"])
         if response is None:
             await self.app(scope, receive, send)
         else:

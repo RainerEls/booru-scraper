@@ -126,7 +126,7 @@ button, select, input, textarea { font-family: inherit; font-size: .9375rem; }
 .nav-link:hover { color: var(--text); background: var(--card-hi); text-decoration: none; }
 .nav-link.active { color: var(--accent); background: var(--accent-dim); }
 .nav-button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; font: inherit; font-size: .9375rem; font-weight: 500; line-height: inherit; cursor: pointer; }
-.theme-toggle { --icon: url('icons/sun-moon.svg'); }
+.theme-toggle { --icon: url('icons/monitor.svg'); }
 :root[data-theme="light"] .theme-toggle { --icon: url('icons/sun.svg'); }
 :root[data-theme="dark"] .theme-toggle { --icon: url('icons/moon.svg'); }
 .login-card { max-width: 24rem; margin: 48px auto 0; }
@@ -316,27 +316,25 @@ select { cursor: pointer; appearance: none;
   border-radius: 99px;
   border: 1px solid;
 }
-.status-badge--running { --icon: url('icons/loader-circle.svg'); }
-.status-badge--done { --icon: url('icons/check.svg'); }
-.status-badge--error { --icon: url('icons/circle-x.svg'); }
-.status-badge--stopped,
-.status-badge--interrupted,
-.status-badge--skipped { --icon: url('icons/circle-alert.svg'); }
 .status-badge--running {
+  --icon: url('icons/loader-circle.svg');
   color: var(--accent); background: var(--accent-dim);
   border-color: var(--border-hi);
 }
 .status-badge--done {
+  --icon: url('icons/check.svg');
   color: var(--green); background: var(--green-dim);
   border-color: var(--green-edge);
 }
 .status-badge--error {
+  --icon: url('icons/circle-x.svg');
   color: var(--red); background: var(--red-dim);
   border-color: var(--red-edge);
 }
 .status-badge--stopped,
 .status-badge--interrupted,
 .status-badge--skipped {
+  --icon: url('icons/circle-alert.svg');
   color: var(--amber); background: var(--amber-dim);
   border-color: var(--amber-edge);
 }
@@ -394,9 +392,7 @@ select { cursor: pointer; appearance: none;
 .check-issues { list-style: none; margin-top: 8px; overflow-wrap: anywhere; }
 .check-issues li { padding: 4px 0; }
 .log--run { margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; }
-.history-table td.run-detail { position: relative; height: 2.8rem; }
-.run-detail summary { padding-right: 18rem; }
-.run-actions { position: absolute; top: 7px; right: 10px; display: flex; gap: 6px; }
+.run-actions { float: right; display: flex; gap: 6px; }
 .run-action { padding: 4px 10px; font-size: .875rem; }
 .check-repull { margin-left: 6px; color: var(--text-2); font-weight: 500; }
 

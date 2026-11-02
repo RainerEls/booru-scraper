@@ -19,7 +19,7 @@ class FakeDb:
         self.tags = set()
         self.runs = {}
 
-    async def create_run(self, uuid, *args):
+    async def create_run(self, **fields):
         self.runs[1] = "running"
         return 1
 

@@ -22,8 +22,11 @@
     <div class="topbar-inner">
       <h1 class="topbar-title display">Booru <span>Scraper</span></h1>
       <nav class="topbar-nav" aria-label="Main">
-        <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Scrape</a>
-        <a href="/activity" class="nav-link {% if request.url.path == '/activity' %}active{% endif %}" {% if request.url.path == '/activity' %}aria-current="page"{% endif %}>Activity</a>
+        {% macro nav_link(path, label) %}
+        <a href="{{ path }}" class="nav-link {% if request.url.path == path %}active{% endif %}" {% if request.url.path == path %}aria-current="page"{% endif %}>{{ label }}</a>
+        {% endmacro %}
+        {{ nav_link('/', 'Scrape') }}
+        {{ nav_link('/activity', 'Activity') }}
         <button type="button" id="theme" class="nav-link nav-button icon theme-toggle"></button>
         {% if logged_in(request) %}
         <form method="post" action="/logout"><button type="submit" class="nav-link nav-button icon icon-logout">Log out</button></form>
