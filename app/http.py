@@ -68,6 +68,11 @@ async def close_clients():
         await open_client.aclose()
 
 
+def retry_delay(response, default):
+    retry_after = response.headers.get("Retry-After", "")
+    return int(retry_after) if retry_after.isdigit() else default
+
+
 async def api_get(session, url, params=None):
     for delay in RETRY_DELAYS:
         try:
@@ -78,8 +83,7 @@ async def api_get(session, url, params=None):
             if r.status_code != 429 and r.status_code < 500:
                 break
             problem = f"HTTP {r.status_code}"
-            retry_after = r.headers.get("Retry-After", "")
-            delay = int(retry_after) if retry_after.isdigit() else delay
+            delay = retry_delay(r, delay)
         run_log.get()("warning", f"{url} failed with {problem}, retrying in {delay} s")
         await asyncio.sleep(delay)
     else:

@@ -427,3 +427,41 @@ def test_a_duplicate_of_a_deleted_booru_post_is_not_retried(monkeypatch, fake_db
 
     assert fake_db.posts[("fake", 1)]["status"] == "skipped"
     assert not warnings_of(job)
+
+
+def test_tag_categories_match_whatever_their_case(monkeypatch, fake_db):
+    calls = []
+
+    def handler(request):
+        url = str(request.url)
+        calls.append((request.method, url))
+        if url.endswith("/tag-categories"):
+            return httpx.Response(200, json={"results": [{"name": "General"}, {"name": "Artist"}]})
+        if "/tag/" in url:
+            return httpx.Response(200, json={"version": 1, "category": "General"})
+        if url.endswith("/posts/"):
+            return httpx.Response(200, json={"id": 7})
+        return httpx.Response(200, json={"config": {}})
+
+    booru(monkeypatch, handler)
+    source = FakeSource([fake_post(tags="cat")], ["cat"])
+    source.tag_categories = {0: "general", 1: "artist"}
+
+    job = run_job(monkeypatch, source)
+
+    assert not warnings_of(job)
+    assert not [call for call in calls if call[0] == "PUT" or call[1].endswith("/tag-categories") and call[0] == "POST"]
+
+
+def test_a_rate_limited_file_check_waits_and_tries_again(monkeypatch):
+    responses = [httpx.Response(429, headers={"Retry-After": "0"}), httpx.Response(429), httpx.Response(200)]
+    booru(monkeypatch, lambda request: responses.pop(0))
+
+    assert asyncio.run(szurubooru.head_file("data/posts/1.png")).status_code == 200
+    assert not responses
+
+
+def test_a_file_check_gives_up_once_the_retries_run_out(monkeypatch):
+    booru(monkeypatch, lambda request: httpx.Response(429))
+
+    assert asyncio.run(szurubooru.head_file("data/posts/1.png")).status_code == 429

@@ -49,13 +49,20 @@ async def all_results(path, **params):
 
 
 async def head_file(content_url):
-    return await session.head(urljoin(f"{BASE_URL}/", f"../{content_url}"))
+    url = urljoin(f"{BASE_URL}/", f"../{content_url}")
+    for delay in http.RETRY_DELAYS:
+        r = await session.head(url)
+        if r.status_code != 429:
+            return r
+        await asyncio.sleep(http.retry_delay(r, delay))
+    return await session.head(url)
 
 
 async def ensure_tag_categories(names):
     r = await api_get(session, f"{BASE_URL}/tag-categories")
     existing = r.json()["results"]
-    missing = set(names) - {category["name"] for category in existing}
+    known = {category["name"].casefold() for category in existing}
+    missing = {name for name in names if name.casefold() not in known}
     for order, name in enumerate(sorted(missing), start=len(existing) + 1):
         payload = {"name": name, "color": "default", "order": order}
         r = await session.post(f"{BASE_URL}/tag-categories", json=payload)
@@ -82,7 +89,7 @@ async def sync_tag(tag_name, tag_category):
     if existing.status_code in REJECTED_STATUSES:
         existing.raise_for_status()
     if existing.status_code == 200:
-        if existing.json().get("category") == tag_category:
+        if str(existing.json().get("category")).casefold() == tag_category.casefold():
             return
         r = await update_tag(tag_name, tag_category, existing.json()["version"])
     else:
