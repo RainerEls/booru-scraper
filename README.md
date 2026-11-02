@@ -15,6 +15,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 - Run history stored in Postgres, with each run's log and buttons to retry the posts that failed or run the same search again
 - Saved searches that run on a schedule, one at a time. Each picks up what's new and stops after 100 known posts in a row, so it doesn't crawl a whole tag every run
 - A stop button for a running scrape, which keeps the tags synced so far
+- Light and dark themes that follow your system, with a switch in the nav
 - Optional password login
 - Optional notifications through Apprise, with a choice of which events to send
 - A restart saves the log of any running scrape and marks it interrupted
@@ -141,3 +142,5 @@ Feature branch → pull request → conventional commits → CI releases and dep
 ## License
 
 AGPL-3.0 — see [LICENSE](LICENSE).
+
+The fonts in `app/static/fonts` are under the SIL Open Font License, with each font's license file next to it.
