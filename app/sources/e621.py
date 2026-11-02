@@ -60,6 +60,7 @@ class E621Source(PostTaggedSource):
             yield {
                 **post,
                 "md5": post["file"]["md5"],
+                "parent_id": post["relationships"]["parent_id"],
                 "file_url": post["file"]["url"],
                 "width": post["file"]["width"],
                 "height": post["file"]["height"],

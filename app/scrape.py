@@ -22,6 +22,7 @@ FEW_KNOWN_TAGS = 3000
 SCHEDULE_CHECK_SECONDS = 60
 SCHEDULED_STOP_AFTER_KNOWN = 100
 NO_POST_EDITS = "The szurubooru account can't edit posts, so duplicates won't be merged."
+NO_RELATION_EDITS = "The szurubooru account can't edit post relations, so related posts won't be linked."
 PERMANENT_UPLOAD_ERRORS = ("DownloadTooLargeError", "InvalidPostContentError")
 
 SOURCES = {
@@ -179,7 +180,13 @@ async def process_post(source, db_entry, post, semaphore, job):
 
 
 async def claim_if_new(job, source_name, post, duplicates):
-    claim = {"source": source_name, "source_post_id": post["id"], "md5": post["md5"], "image_url": post["file_url"]}
+    claim = {
+        "source": source_name,
+        "source_post_id": post["id"],
+        "md5": post["md5"],
+        "image_url": post["file_url"],
+        "parent_post_id": SOURCES[source_name].parent_of(post),
+    }
     if await db.post_exists(source_name, post["id"]):
         job.count("skipped", f"{source_name}: {post['id']} already exists in DB, skipping")
         return None
@@ -284,6 +291,41 @@ async def merge_duplicates(job, source, duplicates):
         job.advance()
 
 
+async def related_md5s(source_name, entry, parent_md5s):
+    parent = entry.parent_post_id
+    family = await db.family_md5s(source_name, [post_id for post_id in (entry.source_post_id, parent) if post_id])
+    if parent and parent not in family:
+        if parent not in parent_md5s:
+            parent_md5s[parent] = await SOURCES[source_name].md5_of(parent)
+        family[parent] = parent_md5s[parent]
+    return {md5 for md5 in family.values() if md5} - {entry.md5}
+
+
+async def link_related_posts(job, spec):
+    entries = await db.posts_with_links_pending(spec.source)
+    if not entries:
+        return
+    job.start_phase("Linking related posts", len(entries))
+    parent_md5s = {}
+    linked = 0
+    for entry in entries:
+        try:
+            related = await related_md5s(spec.source, entry, parent_md5s)
+            if related and await szurubooru.link_posts(entry.md5, related):
+                linked += 1
+        except Exception as e:
+            if forbidden(e):
+                job.warn_once(NO_RELATION_EDITS)
+            else:
+                logger.exception("Linking related posts failed")
+                job.log("warning", f"Related posts weren't all linked, retried next run: {describe(e)}")
+            break
+        await db.finish_linking(entry.id)
+        job.advance()
+    if linked:
+        job.log("info", f"Linked related posts on {linked} booru post(s)")
+
+
 def report_failures(job):
     if not job.failures:
         return
@@ -378,6 +420,7 @@ async def run_scrape(run_id, job, spec):
 
         await upload_posts(job, source, new_posts)
         await merge_duplicates(job, source, duplicates)
+        await link_related_posts(job, spec)
         counters = job.counters
         job.log(
             "info",

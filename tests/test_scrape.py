@@ -33,9 +33,31 @@ class FakeDb:
     async def md5_exists(self, md5):
         return any(p["md5"] == md5 for p in self.posts.values())
 
-    async def claim_post(self, source, source_post_id, md5, image_url, status):
-        self.posts[(source, source_post_id)] = {"md5": md5, "status": status}
+    async def claim_post(self, source, source_post_id, md5, image_url, status, parent_post_id=None):
+        self.posts[(source, source_post_id)] = {
+            "md5": md5,
+            "status": status,
+            "parent": parent_post_id,
+            "links_pending": True,
+        }
         return (source, source_post_id)
+
+    async def posts_with_links_pending(self, source):
+        return [
+            SimpleNamespace(id=key, source_post_id=key[1], md5=post["md5"], parent_post_id=post.get("parent"))
+            for key, post in self.posts.items()
+            if key[0] == source and post.get("links_pending") and post["status"] != "queued"
+        ]
+
+    async def family_md5s(self, source, post_ids):
+        return {
+            key[1]: post["md5"]
+            for key, post in self.posts.items()
+            if key[0] == source and (key[1] in post_ids or post.get("parent") in post_ids)
+        }
+
+    async def finish_linking(self, id):
+        self.posts[id]["links_pending"] = False
 
     async def release_claims(self, post_ids):
         for id in post_ids:
@@ -750,3 +772,184 @@ def test_run_again_repeats_the_same_search(monkeypatch):
 
     run.retry_of = 7
     assert client.post("/api/runs/1/again").status_code == 404
+
+
+class FakeBooru:
+    """Just enough of szurubooru to upload posts and relate them, mirroring relations like it does."""
+
+    def __init__(self, existing=()):
+        self.posts = {}
+        self.edits = []
+        self.edit_status = 200
+        for md5 in existing:
+            self.add(md5)
+
+    def add(self, md5):
+        post = {"id": len(self.posts) + 1, "checksumMD5": md5, "version": 1, "relations": []}
+        self.posts[post["id"]] = post
+        return post
+
+    def related(self, md5):
+        post = next(post for post in self.posts.values() if post["checksumMD5"] == md5)
+        ids = [related["id"] for related in post["relations"]]
+        return sorted(self.posts[id]["checksumMD5"] for id in ids)
+
+    def handler(self, request):
+        if request.method == "POST" and request.url.path == "/api/posts/":
+            content_url = json.loads(request.content)["contentUrl"]
+            md5 = "md5-" + content_url.rsplit("/", 1)[1].removesuffix(".png")
+            for post in self.posts.values():
+                if post["checksumMD5"] == md5:
+                    return httpx2.Response(400, json={"name": "PostAlreadyUploadedError", "otherPostId": post["id"]})
+            return httpx2.Response(200, json={"id": self.add(md5)["id"]})
+        if request.method == "GET" and request.url.path == "/api/posts/":
+            md5s = request.url.params["query"].removeprefix("md5:").split(",")
+            found = [post for post in self.posts.values() if post["checksumMD5"] in md5s]
+            return httpx2.Response(200, json={"results": found, "total": len(found)})
+        if request.method == "PUT" and "/api/post/" in request.url.path:
+            edit = json.loads(request.content)
+            if "relations" not in edit:
+                return httpx2.Response(200, json={})
+            self.edits.append(edit)
+            if self.edit_status != 200:
+                return httpx2.Response(self.edit_status, json={})
+            post = self.posts[int(request.url.path.rsplit("/", 1)[1])]
+            post["relations"] = [{"id": id} for id in edit["relations"]]
+            for id in edit["relations"]:
+                if {"id": post["id"]} not in self.posts[id]["relations"]:
+                    self.posts[id]["relations"].append({"id": post["id"]})
+            return httpx2.Response(200, json={})
+        if request.method == "GET" and "/api/post/" in request.url.path:
+            return httpx2.Response(200, json={"version": 1, "tags": [], "source": ""})
+        return httpx2.Response(404, json={})
+
+
+class FamilySource(FakeSource):
+    def __init__(self, posts, lookups=None):
+        super().__init__(posts)
+        self.lookups = lookups or {}
+        self.looked_up = []
+
+    def parent_of(self, post):
+        return post.get("parent_id")
+
+    async def md5_of(self, post_id):
+        self.looked_up.append(post_id)
+        return self.lookups.get(post_id)
+
+
+def family_post(id, parent_id=None):
+    return {**fake_post(id), "parent_id": parent_id}
+
+
+def run_family(monkeypatch, booru, source):
+    use_szurubooru(monkeypatch, booru.handler)
+    return run_fake_scrape(monkeypatch, source)
+
+
+def test_a_batch_links_children_to_their_parent_and_each_other(monkeypatch, fake_db):
+    booru = FakeBooru()
+
+    run_family(monkeypatch, booru, FamilySource([family_post(1), family_post(2, 1), family_post(3, 1)]))
+
+    assert booru.related("md5-1") == ["md5-2", "md5-3"]
+    assert booru.related("md5-2") == ["md5-1", "md5-3"]
+    assert not any(post["links_pending"] for post in fake_db.posts.values())
+
+
+def test_a_post_with_no_family_never_touches_the_booru_for_links(monkeypatch, fake_db):
+    booru = FakeBooru()
+    source = FamilySource([family_post(1), family_post(2)])
+
+    run_family(monkeypatch, booru, source)
+
+    assert booru.edits == []
+    assert source.looked_up == []
+
+
+def test_siblings_link_without_their_parent_which_links_when_it_arrives(monkeypatch, fake_db):
+    booru = FakeBooru()
+    source = FamilySource([family_post(2, 1), family_post(3, 1)])
+
+    run_family(monkeypatch, booru, source)
+
+    assert source.looked_up == [1]
+    assert booru.related("md5-2") == ["md5-3"]
+
+    run_family(monkeypatch, booru, FamilySource([family_post(1)]))
+
+    assert booru.related("md5-1") == ["md5-2", "md5-3"]
+
+
+def test_a_parent_uploaded_some_other_way_is_found_by_md5(monkeypatch, fake_db):
+    booru = FakeBooru(existing=["uploaded-by-hand"])
+
+    run_family(monkeypatch, booru, FamilySource([family_post(2, 1)], lookups={1: "uploaded-by-hand"}))
+
+    assert booru.related("md5-2") == ["uploaded-by-hand"]
+
+
+def test_relations_made_by_hand_are_kept(monkeypatch, fake_db):
+    booru = FakeBooru(existing=["md5-1", "by-hand", "md5-2"])
+    booru.posts[1]["relations"] = [{"id": 2}]
+
+    run_family(monkeypatch, booru, FamilySource([family_post(1), family_post(2, 1)]))
+
+    assert booru.related("md5-1") == ["by-hand", "md5-2"]
+
+
+def test_relations_already_there_cost_no_edit(monkeypatch, fake_db):
+    booru = FakeBooru(existing=["md5-1", "md5-2"])
+    booru.posts[1]["relations"] = [{"id": 2}]
+    booru.posts[2]["relations"] = [{"id": 1}]
+
+    run_family(monkeypatch, booru, FamilySource([family_post(1), family_post(2, 1)]))
+
+    assert booru.edits == []
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_an_account_that_cant_edit_relations_warns_once_and_keeps_them_pending(monkeypatch, fake_db, status):
+    booru = FakeBooru()
+    booru.edit_status = status
+
+    events = run_family(monkeypatch, booru, FamilySource([family_post(1), family_post(2, 1)]))
+
+    warnings = [event["log"] for event in events if event.get("log") == scrape.NO_RELATION_EDITS]
+    assert len(warnings) == 1
+    assert fake_db.runs[1] == "done"
+    assert fake_db.posts[("fake", 2)]["links_pending"]
+
+
+def test_a_failed_link_is_retried_by_the_next_run(monkeypatch, fake_db):
+    booru = FakeBooru()
+    booru.edit_status = 409
+
+    run_family(monkeypatch, booru, FamilySource([family_post(1), family_post(2, 1)]))
+
+    assert booru.related("md5-2") == []
+    assert fake_db.posts[("fake", 1)]["links_pending"]
+
+    booru.edit_status = 200
+    run_family(monkeypatch, booru, FamilySource([]))
+
+    assert booru.related("md5-2") == ["md5-1"]
+    assert not any(post["links_pending"] for post in fake_db.posts.values())
+
+
+def test_a_post_missing_from_the_booru_stops_waiting_to_be_linked(monkeypatch, fake_db):
+    booru = FakeBooru()
+    fake_db.posts[("fake", 2)] = {"md5": "deleted", "status": "processed", "parent": 1, "links_pending": True}
+
+    run_family(monkeypatch, booru, FamilySource([family_post(1)]))
+
+    assert booru.edits == []
+    assert not fake_db.posts[("fake", 2)]["links_pending"]
+
+
+@pytest.mark.parametrize(
+    ("post", "parent"),
+    [({"parent_id": 7}, 7), ({"parent_id": "7"}, 7), ({"parent_id": 0}, None), ({"parent_id": None}, None), ({}, None)],
+)
+def test_parents_read_the_same_whichever_way_a_source_says_none(post, parent):
+    assert FakeSource([]).parent_of(post) == parent

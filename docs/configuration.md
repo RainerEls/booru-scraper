@@ -26,7 +26,7 @@ Most settings live on the app's **Settings** page and apply without a restart. A
 | Sources | Each source's credentials and request delay. See [Sources](sources.md) |
 | Notifications | Apprise URLs and which events to send. See [Notifications](notifications.md) |
 
-The Szurubooru account needs permission to create posts.
+The Szurubooru account needs permission to create posts. Merging duplicates and linking related posts also need permission to edit them; without it, runs carry on and log a warning.
 
 Saving waits for any running scrape or integrity check to finish.
 

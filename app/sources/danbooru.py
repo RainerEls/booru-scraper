@@ -15,7 +15,7 @@ API_URL = "https://danbooru.donmai.us"
 PAGE_SIZE = 200
 MAX_NUMBERED_PAGES = 1000
 POST_FIELDS = (
-    "id,md5,rating,source,last_noted_at,file_ext,file_url,large_file_url,image_width,image_height,"
+    "id,md5,parent_id,rating,source,last_noted_at,file_ext,file_url,large_file_url,image_width,image_height,"
     "tag_string,tag_string_general,tag_string_artist,tag_string_copyright,tag_string_character,tag_string_meta"
 )
 FREE_ACCOUNT_TAGS = 2
