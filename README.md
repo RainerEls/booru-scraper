@@ -42,10 +42,12 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
 2. Bring it up:
 
    ```bash
-   docker compose up -d --build
+   docker compose up -d
    ```
 
    The app will be available at `http://localhost:8192`, and Postgres data persists to a Docker volume.
+
+   This pulls the published image. To build your own from the source instead, run `docker compose up -d --build`.
 
 ## When something's wrong
 
