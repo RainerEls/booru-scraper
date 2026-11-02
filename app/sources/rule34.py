@@ -60,6 +60,8 @@ class Rule34Source(BooruSource):
 
     async def grab_tags(self, tags):
         found = await self.tags_known_to_gelbooru(tags)
+        for tag in found:
+            yield tag
         known = {t["name"] for t in found}
         remaining = [tag for tag in tags if tag not in known]
         minutes = math.ceil(len(remaining) * RATE_LIMIT / 60)
@@ -67,23 +69,16 @@ class Rule34Source(BooruSource):
             "info",
             f"Gelbooru knew {len(found)}/{len(tags)} tag(s), looking up the rest one at a time, about {minutes} min",
         )
-        looked_up = 0
         try:
-            for looked_up, tag in enumerate(remaining):
-                if looked_up and looked_up % 100 == 0:
-                    run_log.get()("info", f"Looked up {looked_up}/{len(remaining)} tags")
-                found.append({"name": tag, "category": await self.category(tag)})
+            for tag in remaining:
+                yield {"name": tag, "category": await self.category(tag)}
                 await asyncio.sleep(RATE_LIMIT)
         except httpx.HTTPError as e:
-            run_log.get()(
-                "warning",
-                f"Tag lookup stopped at {looked_up}/{len(remaining)}, a later run will finish it: {e!r}",
-            )
-        return found
+            run_log.get()("warning", f"Tag lookup stopped, a later run will finish it: {e!r}")
 
     async def tags_known_to_gelbooru(self, tags):
         try:
-            known = await GelbooruSource().grab_tags(tags)
+            known = [tag async for tag in GelbooruSource().grab_tags(tags)]
         except (httpx.HTTPError, ValueError) as e:
             run_log.get()("warning", f"Could not ask Gelbooru about tags: {e!r}")
             return []

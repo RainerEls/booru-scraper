@@ -90,15 +90,11 @@ class GelbooruSource(BooruSource):
         return by_offset(terms)
 
     async def grab_tags(self, tags):
-        found = []
         for batch in itertools.batched(tags, TAG_BATCH_SIZE):
             r = await api_get(session, API_URL, dapi_params("tag", names=" ".join(batch)))
-            found.extend(r.json().get("tag", []))
+            for tag in r.json().get("tag", []):
+                yield {"name": html.unescape(tag["name"]), "category": self.tag_categories.get(tag["type"], "general")}
             await asyncio.sleep(RATE_LIMIT)
-        return [
-            {"name": html.unescape(tag["name"]), "category": self.tag_categories.get(tag["type"], "general")}
-            for tag in found
-        ]
 
     async def grab_notes(self, post):
         if post.get("has_notes") != "true":

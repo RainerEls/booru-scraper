@@ -2,7 +2,7 @@ import asyncio
 
 import httpx
 import pytest
-from helpers import collect, mock_client
+from helpers import collect, mock_client, tags_of
 
 from app.sources import danbooru
 from app.sources.danbooru import PAGE_SIZE, DanbooruSource
@@ -89,7 +89,7 @@ def test_tag_types_come_from_the_post(monkeypatch):
     source = DanbooruSource()
     collect(source)
 
-    tags = asyncio.run(source.grab_tags(["cat", "an_artist", "unseen"]))
+    tags = tags_of(source, ["cat", "an_artist", "unseen"])
 
     assert {t["name"]: t["category"] for t in tags} == {
         "cat": "general",

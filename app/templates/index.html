@@ -80,6 +80,7 @@
   <div class="section-head">
     <h2>Current Run</h2>
     <div class="rule"></div>
+    <button type="button" class="btn btn--danger hidden" id="stop-btn">Stop</button>
     <span id="run-status-badge" class="status-badge status-badge--running">Running</span>
   </div>
 
@@ -143,7 +144,12 @@
     total:     document.getElementById('count-total'),
   };
 
+  const stopBtn = document.getElementById('stop-btn');
+
   let eventSource = null;
+  let currentJob = null;
+
+  const STATUS_LABELS = { done: 'Done', stopped: 'Stopped', error: 'Error' };
 
   const PERSIST_KEYS = ['source', 'rating', 'limit', 'tags', 'blacklist_tags'];
 
@@ -205,6 +211,8 @@
     progressSection.classList.remove('hidden');
     submitBtn.disabled = true;
     submitLabel.textContent = 'Running…';
+    stopBtn.classList.remove('hidden');
+    stopBtn.disabled = false;
   }
 
   function showProgress(pct) {
@@ -215,12 +223,14 @@
   function setFinished(badgeClass, badgeText) {
     submitBtn.disabled = false;
     submitLabel.textContent = 'Start Scrape';
+    stopBtn.classList.add('hidden');
     statusBadge.className = 'status-badge status-badge--' + badgeClass;
     statusBadge.textContent = badgeText;
   }
 
   function followJob(jobId) {
     setRunning();
+    currentJob = jobId;
     if (eventSource) eventSource.close();
     eventSource = new EventSource(`/scrape/progress/${jobId}`);
 
@@ -248,7 +258,7 @@
       if (msg.status) {
         eventSource.close();
         if (msg.status === 'done') showProgress(100);
-        setFinished(msg.status, msg.status === 'done' ? 'Done' : 'Error');
+        setFinished(msg.status, STATUS_LABELS[msg.status]);
       }
     };
 
@@ -257,6 +267,11 @@
       setFinished('error', 'Offline');
     };
   }
+
+  stopBtn.addEventListener('click', function() {
+    this.disabled = true;
+    fetch(`/api/scrapes/${currentJob}/stop`, { method: 'POST' });
+  });
 
   fetch('/api/scrapes/active')
     .then(res => res.json())
