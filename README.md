@@ -51,12 +51,12 @@ You'll need Docker with Compose, and a szurubooru instance with an account that 
 3. Start it:
 
    ```bash
-   docker compose up -d --build
+   docker compose up -d
    ```
 
 4. Open `http://localhost:8192`, go to **Settings**, and enter your szurubooru details and any source keys.
 
-This builds from source, because the published `0.1.0` image is older than the Settings page and these steps.
+To build the image from source instead, run `docker compose up -d --build`.
 
 ## Screenshots
 
