@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections import Counter
 
-import httpx
+import httpx2
 
 from app import db, notify, szurubooru
 from app.http import describe
@@ -26,7 +26,7 @@ async def file_problem(booru_post, semaphore):
     async with semaphore:
         try:
             r = await szurubooru.head_file(booru_post["contentUrl"])
-        except httpx.TransportError:
+        except httpx2.TransportError:
             return "unverified", "No response from the file server"
     if r.status_code == 404:
         return "damaged", "File is gone"

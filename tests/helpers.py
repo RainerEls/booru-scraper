@@ -1,10 +1,10 @@
 import asyncio
 
-import httpx
+import httpx2
 
 
 def mock_client(handler, **options):
-    return httpx.AsyncClient(transport=httpx.MockTransport(handler), **options)
+    return httpx2.AsyncClient(transport=httpx2.MockTransport(handler), **options)
 
 
 def tags_of(source, names):

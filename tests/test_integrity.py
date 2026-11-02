@@ -2,7 +2,7 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-import httpx
+import httpx2
 import pytest
 from helpers import mock_client
 
@@ -24,16 +24,16 @@ def booru(monkeypatch, posts, deleted=(), merged=(), files=None, fail=None):
     def handler(request):
         path = request.url.path
         if fail and fail in path:
-            return httpx.Response(403)
+            return httpx2.Response(403)
         if request.method == "HEAD":
-            return (files or {}).get(path, httpx.Response(200, headers={"content-length": "100"}))
+            return (files or {}).get(path, httpx2.Response(200, headers={"content-length": "100"}))
         if path.endswith("/snapshots"):
             results = snapshots(deleted if "deleted" in request.url.params["query"] else merged)
         else:
             results = [{"id": i, "contentUrl": f"data/posts/{i}.png", "fileSize": 100} for i in posts]
         offset = int(request.url.params["offset"])
         limit = int(request.url.params["limit"])
-        return httpx.Response(200, json={"total": len(results), "results": results[offset : offset + limit]})
+        return httpx2.Response(200, json={"total": len(results), "results": results[offset : offset + limit]})
 
     monkeypatch.setattr(szurubooru, "session", mock_client(handler))
 
@@ -59,9 +59,9 @@ def test_removed_posts_are_told_apart_by_their_records(monkeypatch):
 
 def test_files_are_checked_by_presence_and_size(monkeypatch):
     files = {
-        "/data/posts/2.png": httpx.Response(404),
-        "/data/posts/3.png": httpx.Response(200, headers={"content-length": "5"}),
-        "/data/posts/4.png": httpx.Response(502),
+        "/data/posts/2.png": httpx2.Response(404),
+        "/data/posts/3.png": httpx2.Response(200, headers={"content-length": "5"}),
+        "/data/posts/4.png": httpx2.Response(502),
     }
     booru(monkeypatch, posts=[1, 2, 3, 4], files=files)
 
@@ -145,21 +145,21 @@ def repull_booru(monkeypatch, on_booru, deleted=(), writes=None):
         path = request.url.path
         if request.method == "HEAD":
             damaged = path.endswith("/2.png")
-            return httpx.Response(404 if damaged else 200, headers={"content-length": "100"})
+            return httpx2.Response(404 if damaged else 200, headers={"content-length": "100"})
         if request.method == "POST" and path.endswith("/posts/"):
             writes.append(("upload", json.loads(request.content)))
-            return httpx.Response(200, json={"id": 77})
+            return httpx2.Response(200, json={"id": 77})
         if request.method == "PUT":
             writes.append(("replace", path, json.loads(request.content)))
-            return httpx.Response(200, json={})
+            return httpx2.Response(200, json={})
         if "/post/" in path:
-            return httpx.Response(200, json={"version": 5})
+            return httpx2.Response(200, json={"version": 5})
         if path.endswith("/snapshots"):
             ids = deleted if "deleted" in request.url.params["query"] else ()
             results = [{"id": str(i), "user": {"name": "admin"}, "time": "now"} for i in ids]
         else:
             results = [{"id": i, "contentUrl": f"data/posts/{i}.png", "fileSize": 100} for i in on_booru]
-        return httpx.Response(200, json={"total": len(results), "results": results})
+        return httpx2.Response(200, json={"total": len(results), "results": results})
 
     monkeypatch.setattr(szurubooru, "session", mock_client(handler))
     monkeypatch.setattr(integrity, "REPULL_DELAY", 0)
@@ -263,7 +263,7 @@ def test_an_unreadable_booru_pulls_nothing(monkeypatch):
     repull_booru(monkeypatch, on_booru=[], writes=writes)
 
     def refused(request):
-        return httpx.Response(403)
+        return httpx2.Response(403)
 
     monkeypatch.setattr(szurubooru, "session", mock_client(refused))
     item = issue(1, "missing")

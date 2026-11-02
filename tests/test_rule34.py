@@ -1,6 +1,6 @@
 import asyncio
 
-import httpx
+import httpx2
 import pytest
 from helpers import collect, mock_client, tags_of
 
@@ -31,7 +31,7 @@ def test_search_pages_by_id_and_normalises_posts(monkeypatch):
     def handler(request):
         requests.append(request.url.params)
         count = PAGE_SIZE if len(requests) == 1 else 1
-        return httpx.Response(200, json=[post(5000 - i) for i in range(count)])
+        return httpx2.Response(200, json=[post(5000 - i) for i in range(count)])
 
     use_rule34(monkeypatch, handler)
     posts = collect(Rule34Source(), tags="cat", blacklist_tags="dog", rating="sketchy")
@@ -48,7 +48,7 @@ def test_sorted_searches_page_by_offset(monkeypatch):
     def handler(request):
         requests.append(request.url.params)
         count = PAGE_SIZE if len(requests) == 1 else 1
-        return httpx.Response(200, json=[post(i) for i in range(count)])
+        return httpx2.Response(200, json=[post(i) for i in range(count)])
 
     use_rule34(monkeypatch, handler)
     collect(Rule34Source(), tags="cat sort:score")
@@ -58,20 +58,20 @@ def test_sorted_searches_page_by_offset(monkeypatch):
 
 
 def test_no_matches_is_an_empty_body(monkeypatch):
-    use_rule34(monkeypatch, lambda request: httpx.Response(200, text=""))
+    use_rule34(monkeypatch, lambda request: httpx2.Response(200, text=""))
 
     assert collect(Rule34Source(), tags="nothing") == []
 
 
 def test_a_refused_request_explains_itself(monkeypatch):
-    use_rule34(monkeypatch, lambda request: httpx.Response(200, json="Missing authentication."))
+    use_rule34(monkeypatch, lambda request: httpx2.Response(200, json="Missing authentication."))
 
     with pytest.raises(CredentialsRejected, match="api.rule34.xxx refused"):
         collect(Rule34Source(), tags="cat")
 
 
 def test_another_refusal_quotes_the_source(monkeypatch):
-    use_rule34(monkeypatch, lambda request: httpx.Response(200, json="Too many tags."))
+    use_rule34(monkeypatch, lambda request: httpx2.Response(200, json="Too many tags."))
 
     with pytest.raises(RuntimeError, match="Too many tags"):
         collect(Rule34Source(), tags="cat")
@@ -79,7 +79,7 @@ def test_another_refusal_quotes_the_source(monkeypatch):
 
 def test_ratings_are_normalised_and_mismatches_dropped(monkeypatch):
     posts = [post(1), post(2, rating="Questionable"), post(3, rating="Explicit")]
-    use_rule34(monkeypatch, lambda request: httpx.Response(200, json=posts))
+    use_rule34(monkeypatch, lambda request: httpx2.Response(200, json=posts))
 
     results = collect(Rule34Source(), rating="sketchy")
 
@@ -89,7 +89,7 @@ def test_ratings_are_normalised_and_mismatches_dropped(monkeypatch):
 
 def gelbooru_knows(monkeypatch, tags):
     def handler(request):
-        return httpx.Response(200, json={"tag": tags})
+        return httpx2.Response(200, json={"tag": tags})
 
     monkeypatch.setattr(gelbooru, "session", mock_client(handler))
 
@@ -100,7 +100,7 @@ def test_tags_gelbooru_knows_are_not_looked_up_on_rule34(monkeypatch):
 
     def handler(request):
         names.append(request.url.params["name"])
-        return httpx.Response(200, text='<tag type="array"/>')
+        return httpx2.Response(200, text='<tag type="array"/>')
 
     use_rule34(monkeypatch, handler)
     tags = tags_of(Rule34Source(), ["known", "unknown"])
@@ -111,9 +111,9 @@ def test_tags_gelbooru_knows_are_not_looked_up_on_rule34(monkeypatch):
 
 def test_a_gelbooru_failure_falls_back_to_rule34(monkeypatch):
     monkeypatch.setattr(
-        gelbooru, "session", mock_client(lambda request: httpx.Response(401))
+        gelbooru, "session", mock_client(lambda request: httpx2.Response(401))
     )
-    use_rule34(monkeypatch, lambda request: httpx.Response(200, text='<tags><tag type="1"/></tags>'))
+    use_rule34(monkeypatch, lambda request: httpx2.Response(200, text='<tags><tag type="1"/></tags>'))
 
     assert tags_of(Rule34Source(), ["a"]) == [{"name": "a", "category": "artist"}]
 
@@ -124,7 +124,7 @@ def test_tag_lookup_escapes_names(monkeypatch):
 
     def handler(request):
         names.append(request.url.params["name"])
-        return httpx.Response(200, text='<tags><tag type="1"/></tags>')
+        return httpx2.Response(200, text='<tags><tag type="1"/></tags>')
 
     use_rule34(monkeypatch, handler)
     tags_of(Rule34Source(), ["entro'pi"])
@@ -134,7 +134,7 @@ def test_tag_lookup_escapes_names(monkeypatch):
 
 def test_a_failed_lookup_keeps_the_tags_already_found(monkeypatch):
     gelbooru_knows(monkeypatch, [])
-    responses = [httpx.Response(200, text='<tags><tag type="4"/></tags>')] + [httpx.Response(404)]
+    responses = [httpx2.Response(200, text='<tags><tag type="4"/></tags>')] + [httpx2.Response(404)]
     use_rule34(monkeypatch, lambda request: responses.pop(0))
 
     assert tags_of(Rule34Source(), ["first", "second"]) == [{"name": "first", "category": "character"}]
@@ -145,7 +145,7 @@ def test_notes_parse_and_skip_inactive_ones(monkeypatch):
         '<notes><note x="1" y="2" width="3" height="4" body="&lt;b&gt;hi&lt;/b&gt;" is_active="true"/>'
         '<note x="1" y="2" width="3" height="4" body="old" is_active="false"/></notes>'
     )
-    use_rule34(monkeypatch, lambda request: httpx.Response(200, text=xml))
+    use_rule34(monkeypatch, lambda request: httpx2.Response(200, text=xml))
     source = Rule34Source()
 
     assert asyncio.run(source.grab_notes({"id": 1, "has_notes": False})) is None

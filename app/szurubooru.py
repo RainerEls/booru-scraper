@@ -2,7 +2,7 @@ import asyncio
 import base64
 from urllib.parse import quote, urljoin
 
-import httpx
+import httpx2
 
 from app import config, http
 from app.http import REJECTED_STATUSES, ApiError, SetupProblem, api_get
@@ -36,7 +36,7 @@ async def check_connection():
         raise SetupProblem(
             f"Szurubooru answered HTTP {e.status}. Check SZURUBOORU_BASE_URL and SZURUBOORU_USER_ID in Settings."
         ) from e
-    except httpx.TransportError as e:
+    except httpx2.TransportError as e:
         raise SetupProblem(f"Could not reach szurubooru at {BASE_URL}. Check SZURUBOORU_BASE_URL in Settings.") from e
     except (ValueError, LookupError, TypeError) as e:
         raise SetupProblem(

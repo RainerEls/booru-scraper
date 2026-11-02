@@ -3,7 +3,7 @@ import logging
 import xml.etree.ElementTree as ET
 from contextvars import ContextVar
 
-import httpx
+import httpx2
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +14,10 @@ run_log = ContextVar("run_log", default=lambda level, message: getattr(logger, l
 _clients = []
 
 
-class ApiError(httpx.HTTPError):
+class ApiError(httpx2.HTTPError):
     def __init__(self, url, status):
         super().__init__(f"{url} returned HTTP {status}")
-        self.host = httpx.URL(url).host
+        self.host = httpx2.URL(url).host
         self.status = status
 
 
@@ -28,11 +28,11 @@ class SetupProblem(Exception):
 class CredentialsRejected(SetupProblem):
     def __init__(self, url, status=None):
         detail = f" (HTTP {status})" if status else ""
-        super().__init__(f"{httpx.URL(url).host} refused the request{detail}. Check the credentials for it in Settings.")
+        super().__init__(f"{httpx2.URL(url).host} refused the request{detail}. Check the credentials for it in Settings.")
 
 
 def forbidden(e):
-    if isinstance(e, httpx.HTTPStatusError):
+    if isinstance(e, httpx2.HTTPStatusError):
         return e.response.status_code in REJECTED_STATUSES
     return isinstance(e, CredentialsRejected)
 
@@ -40,11 +40,11 @@ def forbidden(e):
 def describe(e):
     if isinstance(e, ApiError):
         host, status = e.host, e.status
-    elif isinstance(e, httpx.HTTPStatusError):
+    elif isinstance(e, httpx2.HTTPStatusError):
         host, status = e.request.url.host, e.response.status_code
-    elif isinstance(e, httpx.TimeoutException):
+    elif isinstance(e, httpx2.TimeoutException):
         return "The request timed out"
-    elif isinstance(e, httpx.TransportError):
+    elif isinstance(e, httpx2.TransportError):
         return "The connection failed"
     elif isinstance(e, (ValueError, LookupError, ET.ParseError)):
         return "The response wasn't in the expected format"
@@ -58,7 +58,7 @@ def describe(e):
 
 
 def client(**options):
-    new_client = httpx.AsyncClient(**options)
+    new_client = httpx2.AsyncClient(**options)
     _clients.append(new_client)
     return new_client
 
@@ -78,7 +78,7 @@ async def api_get(session, url, params=None):
     for delay in RETRY_DELAYS:
         try:
             r = await session.get(url, params=params)
-        except httpx.TransportError as e:
+        except httpx2.TransportError as e:
             problem = repr(e)
         else:
             if r.status_code != 429 and r.status_code < 500:
