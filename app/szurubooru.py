@@ -4,6 +4,7 @@ from urllib.parse import quote, urljoin
 
 from app import config, http
 from app.http import api_get
+from app.sources.base import MAX_SOURCE_LENGTH
 
 RATE_LIMIT = config.rate_limit("SZURUBOORU")
 BASE_URL = config.SZURUBOORU_BASE_URL
@@ -69,6 +70,24 @@ async def replace_content(post_id, content_url):
     current = await api_get(session, f"{BASE_URL}/post/{post_id}", {"fields": "version"})
     payload = {"version": current.json()["version"], "contentUrl": content_url}
     r = await session.put(f"{BASE_URL}/post/{post_id}", json=payload, timeout=UPLOAD_TIMEOUT)
+    r.raise_for_status()
+
+
+async def merge_into_post(post_id, tags, source):
+    await asyncio.sleep(RATE_LIMIT)
+    current = (await api_get(session, f"{BASE_URL}/post/{post_id}", {"fields": "version,tags,source"})).json()
+    known = {name for tag in current["tags"] for name in tag["names"]}
+    new_tags = [tag for tag in tags if tag not in known]
+    links = (current["source"] or "").splitlines()
+    new_links = [link for link in source.splitlines() if link not in links]
+    if not new_tags and not new_links:
+        return
+    payload = {
+        "version": current["version"],
+        "tags": [tag["names"][0] for tag in current["tags"]] + new_tags,
+        "source": "\n".join(links + new_links)[:MAX_SOURCE_LENGTH],
+    }
+    r = await session.put(f"{BASE_URL}/post/{post_id}", json=payload)
     r.raise_for_status()
 
 

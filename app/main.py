@@ -201,8 +201,10 @@ async def process_post(source, db_entry, post, semaphore, job):
                 await db.finish_post(db_entry, "processed", body["id"])
                 job.count("processed", f"Post {post['id']} uploaded")
             elif r.status_code == 400 and body.get("name") == "PostAlreadyUploadedError":
-                await db.finish_post(db_entry, "skipped")
-                job.count("skipped", f"Post {post['id']} already uploaded, skipping")
+                other_post = body["otherPostId"]
+                await szurubooru.merge_into_post(other_post, post["tags"].split(), source.source_links(post))
+                await db.finish_post(db_entry, "merged")
+                job.count("skipped", f"Post {post['id']} already uploaded, merged into booru post {other_post}")
             else:
                 error_code = body.get("name", "Unknown")
                 if error_code in PERMANENT_UPLOAD_ERRORS:
@@ -223,14 +225,16 @@ async def process_post(source, db_entry, post, semaphore, job):
             job.advance()
 
 
-async def claim_if_new(job, source_name, post):
+async def claim_if_new(job, source_name, post, duplicates):
     claim = {"source": source_name, "source_post_id": post["id"], "md5": post["md5"], "image_url": post["file_url"]}
     if await db.post_exists(source_name, post["id"]):
         job.count("skipped", f"{source_name}: {post['id']} already exists in DB, skipping")
         return None
     if await db.md5_exists(post["md5"]):
-        await db.claim_post(**claim, status="skipped")
-        job.count("skipped", f"MD5 {post['md5']} already exists in DB, adding source entry and skipping")
+        db_entry = await db.claim_post(**claim, status="queued")
+        if db_entry is not None:
+            duplicates.append((db_entry, post))
+        job.count("skipped", f"MD5 {post['md5']} already exists in DB, will merge post {post['id']} into it")
         return None
     db_entry = await db.claim_post(**claim, status="queued")
     if db_entry is None:
@@ -238,7 +242,7 @@ async def claim_if_new(job, source_name, post):
     return db_entry
 
 
-async def find_new_posts(job, spec, new_posts):
+async def find_new_posts(job, spec, new_posts, duplicates):
     source = SOURCES[spec.source]
     if spec.post_ids:
         posts = source.posts_by_id(spec.post_ids)
@@ -249,7 +253,7 @@ async def find_new_posts(job, spec, new_posts):
     try:
         async for post in posts:
             job.count("total", f"Found post {post['id']}")
-            db_entry = await claim_if_new(job, spec.source, post)
+            db_entry = await claim_if_new(job, spec.source, post, duplicates)
             if db_entry is None:
                 known_in_a_row += 1
                 if known_in_a_row == spec.stop_after_known:
@@ -267,10 +271,10 @@ async def find_new_posts(job, spec, new_posts):
         job.error(f"Search failed, continuing with the {len(new_posts)} new post(s) found: {e!r}")
 
 
-async def sync_unknown_tags(job, source, new_posts):
-    post_tags = {tag for _, post in new_posts for tag in post["tags"].split()}
+async def sync_unknown_tags(job, source, posts):
+    post_tags = {tag for _, post in posts for tag in post["tags"].split()}
     unknown_tags = {tag for tag in post_tags if not await db.tag_exists(tag)}
-    job.log("info", f"Found {len(new_posts)} new post(s) with {len(unknown_tags)} unknown tag(s)")
+    job.log("info", f"Found {len(posts)} post(s) to upload or merge with {len(unknown_tags)} unknown tag(s)")
     if not unknown_tags:
         return
 
@@ -282,6 +286,29 @@ async def sync_unknown_tags(job, source, new_posts):
             job.log("warning", f"Tag {tag['name']} failed to sync: {e!r}")
         else:
             await db.store_tag(tag["name"])
+        job.advance()
+
+
+async def merge_duplicate(job, source, db_entry, post):
+    booru_post = await db.booru_post_for_md5(post["md5"])
+    if booru_post is None:
+        job.log("info", f"Post {post['id']} has no uploaded original to merge into yet")
+        return
+    try:
+        await szurubooru.merge_into_post(booru_post, post["tags"].split(), source.source_links(post))
+    except httpx.HTTPError as e:
+        job.log("warning", f"Post {post['id']} could not be merged into booru post {booru_post}, retried next run: {e!r}")
+    else:
+        await db.finish_post(db_entry, "merged")
+        job.log("info", f"Post {post['id']} merged into booru post {booru_post}")
+
+
+async def merge_duplicates(job, source, duplicates):
+    if not duplicates:
+        return
+    job.start_phase("Merging duplicates", len(duplicates))
+    for db_entry, post in duplicates:
+        await merge_duplicate(job, source, db_entry, post)
         job.advance()
 
 
@@ -324,6 +351,7 @@ async def notify_run(job, spec):
 async def run_scrape(run_id, job, spec):
     source = SOURCES[spec.source]
     new_posts = []
+    duplicates = []
     spec.blacklist_tags = " ".join(dict.fromkeys(f"{config.BLACKLIST_TAGS} {spec.blacklist_tags}".split()))
     run = None
     logger.info(f"Scrape started: {spec}")
@@ -345,12 +373,13 @@ async def run_scrape(run_id, job, spec):
             job.log("warning", f"Could not set up tag categories: {e!r}")
 
         job.log("info", f"Searching {spec.source}")
-        await find_new_posts(job, spec, new_posts)
-        await sync_unknown_tags(job, source, new_posts)
+        await find_new_posts(job, spec, new_posts, duplicates)
+        await sync_unknown_tags(job, source, new_posts + duplicates)
 
         job.start_phase("Uploading", len(new_posts))
         semaphore = asyncio.Semaphore(config.CONCURRENT_UPLOADS)
         await asyncio.gather(*[process_post(source, entry, post, semaphore, job) for entry, post in new_posts])
+        await merge_duplicates(job, source, duplicates)
         job.log("info", " - ".join(f"{field.title()}: {count}" for field, count in job.counters.items()))
     except asyncio.CancelledError:
         job.status = job.stop_status
@@ -359,7 +388,7 @@ async def run_scrape(run_id, job, spec):
         logger.exception("Scrape failed")
         job.error(f"Scrape failed: {e!r}")
     finally:
-        await db.release_claims([entry for entry, _ in new_posts])
+        await db.release_claims([entry for entry, _ in new_posts + duplicates])
         report_failures(job)
         if run is not None:
             await db.update_run(

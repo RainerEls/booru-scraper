@@ -138,6 +138,12 @@ async def md5_exists(md5):
     return await has_row(Posts, Posts.md5 == md5)
 
 
+async def booru_post_for_md5(md5):
+    query = select(Posts.szurubooru_post_id).where(Posts.md5 == md5, Posts.szurubooru_post_id.is_not(None)).limit(1)
+    async with Session() as session:
+        return await session.scalar(query)
+
+
 async def tag_exists(tag_name):
     return await has_row(Tags, Tags.tag == tag_name)
 

@@ -10,7 +10,7 @@ A small web app for pulling posts from booru-style image boards and uploading th
 
 - Web UI for starting scrape jobs (source, rating, tag/blacklist filters, how many new posts to fetch)
 - Live progress over server-sent events, with a running log and pass/fail counts
-- Dedup against your szurubooru instance by MD5 and by source post ID, so re-running a scrape won't create duplicates
+- Dedup against your szurubooru instance by MD5 and by source post ID, so re-running a scrape won't create duplicates. When another source has the same file, its tags and link are added to the existing post
 - Automatically pulls in and syncs any tags it doesn't already know about
 - Run history stored in Postgres, with each run's log and a button to retry the posts that failed
 - Saved searches that run on a schedule, one at a time. Each picks up what's new and stops after 100 known posts in a row, so it doesn't crawl a whole tag every run
