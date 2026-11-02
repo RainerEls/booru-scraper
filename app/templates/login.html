@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Log in · Booru Scraper{% endblock %}
+
+{% block content %}
+<form class="card login-card" method="post" action="/login">
+  <div class="form-group">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
+  </div>
+  {% if error %}<p class="login-error">{{ error }}</p>{% endif %}
+  <div class="form-actions">
+    <button type="submit" class="btn btn--primary">Log in</button>
+  </div>
+</form>
+{% endblock %}
