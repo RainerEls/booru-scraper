@@ -68,14 +68,14 @@
     </div>
 
     <div class="form-actions">
-      <button type="submit" class="btn btn--primary" id="submit-btn">
+      <button type="submit" class="btn btn--primary icon icon-play" id="submit-btn">
         <span id="submit-label">Start Scrape</span>
       </button>
       <span class="form-actions__gap"></span>
       <label for="interval_hours">Every</label>
       <input type="number" id="interval_hours" value="24" min="1" max="720">
       <label for="interval_hours">hours</label>
-      <button type="button" class="btn btn--secondary" id="schedule-btn">Save as Schedule</button>
+      <button type="button" class="btn btn--secondary icon icon-schedule" id="schedule-btn">Save as Schedule</button>
     </div>
 
   </form>
@@ -87,7 +87,7 @@
   <div class="section-head">
     <h2>Current Run</h2>
     <div class="rule"></div>
-    <button type="button" class="btn btn--danger hidden" id="stop-btn">Stop</button>
+    <button type="button" class="btn btn--danger icon icon-stop hidden" id="stop-btn">Stop</button>
     <span id="run-status-badge" class="status-badge status-badge--running" role="status">Running</span>
   </div>
 
@@ -164,9 +164,9 @@
         <td class="mono time-cell">{{ schedule.last_run_at | local_time if schedule.last_run_at else '—' }}</td>
         <td class="mono time-cell">{{ schedule | next_run | local_time if schedule.enabled else 'Paused' }}</td>
         <td class="schedule-actions">
-          <button type="button" class="btn btn--secondary schedule-run" aria-label="Run: {{ schedule_name }}">Run</button>
-          <button type="button" class="btn btn--secondary schedule-toggle" aria-label="{{ 'Pause' if schedule.enabled else 'Resume' }}: {{ schedule_name }}">{{ 'Pause' if schedule.enabled else 'Resume' }}</button>
-          <button type="button" class="btn btn--danger schedule-delete" aria-label="Delete: {{ schedule_name }}">Delete</button>
+          <button type="button" class="btn btn--secondary icon icon-play schedule-run" aria-label="Run: {{ schedule_name }}">Run</button>
+          <button type="button" class="btn btn--secondary icon {{ 'icon-pause' if schedule.enabled else 'icon-play' }} schedule-toggle" aria-label="{{ 'Pause' if schedule.enabled else 'Resume' }}: {{ schedule_name }}">{{ 'Pause' if schedule.enabled else 'Resume' }}</button>
+          <button type="button" class="btn btn--danger icon icon-delete schedule-delete" aria-label="Delete: {{ schedule_name }}">Delete</button>
         </td>
       </tr>
       {% endfor %}

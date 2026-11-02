@@ -143,4 +143,4 @@ Feature branch → pull request → conventional commits → CI releases and dep
 
 AGPL-3.0 — see [LICENSE](LICENSE).
 
-The fonts in `app/static/fonts` are under the SIL Open Font License, with each font's license file next to it.
+The fonts in `app/static/fonts` are under the SIL Open Font License, with each font's license file next to it. The icons in `app/static/icons` are from [Lucide](https://lucide.dev), under its ISC license.

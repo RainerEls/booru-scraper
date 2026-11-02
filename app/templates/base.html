@@ -24,14 +24,9 @@
       <nav class="topbar-nav" aria-label="Main">
         <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Scrape</a>
         <a href="/activity" class="nav-link {% if request.url.path == '/activity' %}active{% endif %}" {% if request.url.path == '/activity' %}aria-current="page"{% endif %}>Activity</a>
-        <label class="sr-only" for="theme">Theme</label>
-        <select id="theme" class="theme-select">
-          <option value="">Auto</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
+        <button type="button" id="theme" class="nav-link nav-button icon theme-toggle"></button>
         {% if logged_in(request) %}
-        <form method="post" action="/logout"><button type="submit" class="nav-link nav-button">Log out</button></form>
+        <form method="post" action="/logout"><button type="submit" class="nav-link nav-button icon icon-logout">Log out</button></form>
         {% endif %}
       </nav>
     </div>
@@ -42,17 +37,28 @@
   </main>
 
   <script>
-    const themeSelect = document.getElementById('theme');
-    themeSelect.value = document.documentElement.dataset.theme || '';
-    themeSelect.addEventListener('change', () => {
-      if (themeSelect.value) {
-        document.documentElement.dataset.theme = themeSelect.value;
-        localStorage.setItem('booru_theme', themeSelect.value);
+    const themeButton = document.getElementById('theme');
+    const THEME_NAMES = { '': 'Auto', light: 'Light', dark: 'Dark' };
+    const NEXT_THEME = { '': 'light', light: 'dark', dark: '' };
+
+    function showTheme() {
+      const name = THEME_NAMES[document.documentElement.dataset.theme || ''];
+      themeButton.title = `Theme: ${name}`;
+      themeButton.setAttribute('aria-label', `Theme: ${name}`);
+    }
+
+    themeButton.addEventListener('click', () => {
+      const theme = NEXT_THEME[document.documentElement.dataset.theme || ''];
+      if (theme) {
+        document.documentElement.dataset.theme = theme;
+        localStorage.setItem('booru_theme', theme);
       } else {
         delete document.documentElement.dataset.theme;
         localStorage.removeItem('booru_theme');
       }
+      showTheme();
     });
+    showTheme();
   </script>
   {% block scripts %}{% endblock %}
 </body>
