@@ -91,7 +91,7 @@ async def repull_post(issue, kind, source):
         await szurubooru.replace_content(issue["booru_post_id"], post["file_url"])
         return "File replaced"
     post["notes"] = await source.grab_notes(post)
-    r = await szurubooru.upload_post(post, source.safety(post))
+    r = await szurubooru.upload_post(post, source.safety(post), source.source_links(post))
     r.raise_for_status()
     await db.finish_post(issue["post_id"], "processed", r.json()["id"])
     return "Uploaded again"

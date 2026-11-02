@@ -38,6 +38,9 @@ class Rule34Source(BooruSource):
     rating_terms = {"safe": "rating:safe", "sketchy": "rating:questionable", "unsafe": "rating:explicit"}
     tag_categories = GelbooruSource.tag_categories
     slow_tag_lookup = True
+    credentials = (config.RULE34_API_KEY, config.RULE34_USER_ID)
+    search_hint = "Sort with sort:score."
+    post_page = "https://rule34.xxx/index.php?page=post&s=view&id={id}"
 
     async def search_posts(self, tags="", blacklist_tags="", rating=None):
         terms = self.search_terms(tags, blacklist_tags, rating)

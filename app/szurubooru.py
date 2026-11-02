@@ -85,11 +85,11 @@ def note_payload(note, image_width, image_height):
     }
 
 
-async def upload_post(post, safety):
+async def upload_post(post, safety, source=None):
     await asyncio.sleep(RATE_LIMIT)
     payload = {"contentUrl": post["file_url"], "tags": post["tags"].split(), "safety": safety}
-    if post.get("source") is not None:
-        payload["source"] = post["source"]
+    if source:
+        payload["source"] = source
     if post.get("notes"):
         payload["notes"] = [note_payload(note, post["width"], post["height"]) for note in post["notes"]]
     return await session.post(f"{BASE_URL}/posts/", json=payload, timeout=UPLOAD_TIMEOUT)

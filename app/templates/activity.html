@@ -94,6 +94,7 @@
       <tr>
         <th>Time</th>
         <th>Source</th>
+        <th>Rating</th>
         <th>Tags</th>
         <th>Blacklisted</th>
         <th>Limit</th>
@@ -101,6 +102,7 @@
         <th class="num">Uploaded</th>
         <th class="num">Skipped</th>
         <th class="num">Failed</th>
+        <th class="num">Took</th>
         <th>Status</th>
       </tr>
     </thead>
@@ -109,6 +111,7 @@
       <tr>
         <td class="mono time-cell">{{ run.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
         <td>{{ run.source }}</td>
+        <td>{{ (run.rating or 'any') | capitalize }}</td>
         <td class="tags-cell" title="{{ run.tags or '' }}">{{ run.tags or '—' }}</td>
         <td class="blacklist-cell" title="{{ run.blacklist_tags or '' }}">{{ run.blacklist_tags or '—' }}</td>
         <td class="num">{{ run.post_limit }}</td>
@@ -116,6 +119,7 @@
         <td class="num green">{{ run.processed }}</td>
         <td class="num amber">{{ run.skipped }}</td>
         <td class="num red">{{ run.failed }}</td>
+        <td class="num mono time-cell">{{ run | duration }}</td>
         <td>
           <span class="status-badge status-badge--{{ run.status }}">{{ run.status }}</span>
         </td>

@@ -4,6 +4,8 @@ import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from functools import partial
 
+MAX_SOURCE_LENGTH = 2048
+
 _TAG_PAIRS = [
     (r"<b>|<strong>", r"</b>|</strong>", "**"),
     (r"<i>|<em>", r"</i>|</em>", "*"),
@@ -102,6 +104,17 @@ class BooruSource(ABC):
     rating_terms = {}
     tag_categories = {}
     slow_tag_lookup = False
+    credentials = ()
+    search_hint = ""
+    post_page = ""
+
+    @property
+    def configured(self):
+        return all(self.credentials)
+
+    def source_links(self, post):
+        links = [self.post_page.format(id=post["id"]), post.get("source")]
+        return "\n".join(filter(None, links))[:MAX_SOURCE_LENGTH]
 
     def search_terms(self, tags, blacklist_tags, rating):
         terms = ["-" + tag for tag in blacklist_tags.split()] + tags.split()

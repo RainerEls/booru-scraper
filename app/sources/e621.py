@@ -38,6 +38,8 @@ class E621Source(PostTaggedSource):
         "meta": "metadata",
         "lore": "general",
     }
+    search_hint = "Sort with order:score."
+    post_page = "https://e621.net/posts/{id}"
 
     async def search_posts(self, tags="", blacklist_tags="", rating=None):
         terms = self.search_terms(tags, blacklist_tags, rating)

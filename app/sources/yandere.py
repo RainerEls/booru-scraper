@@ -32,6 +32,8 @@ class YandereSource(PostTaggedSource):
         "circle": "copyright",
         "faults": "metadata",
     }
+    search_hint = "Sort with order:score."
+    post_page = "https://yande.re/post/show/{id}"
 
     async def fetch_page(self, terms, page):
         params = {"tags": " ".join(terms), "limit": PAGE_SIZE, "page": page, "api_version": 2, "include_tags": 1}

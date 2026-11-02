@@ -59,6 +59,7 @@ class FakeSource(BooruSource):
         self.notes_for = []
 
     async def search_posts(self, tags="", blacklist_tags="", rating=None):
+        self.blacklist = blacklist_tags
         for post in self.posts:
             self.yielded += 1
             yield post
@@ -144,6 +145,62 @@ def test_a_post_szurubooru_can_never_take_stops_blocking_its_search(monkeypatch,
     assert fake_db.posts[("fake", 1)]["status"] == "rejected"
     assert second[-2]["processed"] == 1
     assert uploaded == ["http://source.test/2.png"]
+
+
+def test_the_shared_blacklist_applies_to_every_scrape(monkeypatch, fake_db):
+    monkeypatch.setattr(main.config, "BLACKLIST_TAGS", "gore dog")
+    source = FakeSource([])
+    monkeypatch.setitem(main.SOURCES, "fake", source)
+
+    asyncio.run(main.run_scrape("job", run_job(), 1, "fake", None, "dog cat", None))
+
+    assert source.blacklist == "gore dog cat"
+
+
+def test_progress_reports_each_phase(monkeypatch, fake_db):
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(404)
+        return httpx.Response(200, json={"id": 7})
+
+    use_szurubooru(monkeypatch, handler)
+
+    messages = scrape(monkeypatch, FakeSource([fake_post()], tags=["cat"]), limit=5)
+
+    last = {m["phase"]: (m["done"], m["goal"]) for m in messages if "phase" in m}
+    assert last["Searching"] == (1, 5)
+    assert last["Syncing tags"] == (1, 1)
+    assert last["Uploading"] == (1, 1)
+
+
+def test_uploads_link_back_to_the_post(monkeypatch):
+    class Linked(FakeSource):
+        post_page = "http://source.test/posts/{id}"
+
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"id": 7})
+
+    use_szurubooru(monkeypatch, handler)
+    source = Linked([])
+    post = {**fake_post(5), "source": "http://artist.test/"}
+
+    asyncio.run(szurubooru.upload_post(post, "safe", source.source_links(post)))
+    assert bodies[0]["source"] == "http://source.test/posts/5\nhttp://artist.test/"
+    assert len(source.source_links({**post, "source": "x" * 5000})) == 2048
+
+
+def test_a_source_without_its_keys_is_refused(monkeypatch):
+    class NeedsKeys(FakeSource):
+        credentials = (None,)
+
+    monkeypatch.setitem(main.SOURCES, "gelbooru", NeedsKeys([]))
+    client = TestClient(main.app)
+
+    assert client.post("/scrape", json={"source": "gelbooru", "limit": 1}).status_code == 422
+    assert next(s for s in client.get("/api/sources").json() if s["name"] == "gelbooru")["configured"] is False
 
 
 def test_limit_counts_new_posts_not_known_ones(monkeypatch, fake_db):

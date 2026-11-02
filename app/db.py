@@ -75,6 +75,7 @@ class Runs(Base):
     skipped: Mapped[int] = mapped_column(nullable=True)
     failed: Mapped[int] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column()
+    finished_at: Mapped[datetime] = mapped_column(nullable=True)
 
 
 class IntegrityChecks(Base):
@@ -221,5 +222,5 @@ async def update_run(id, total, processed, skipped, failed, status):
     await write(
         update(Runs)
         .where(Runs.id == id)
-        .values(total=total, processed=processed, skipped=skipped, failed=failed, status=status)
+        .values(total=total, processed=processed, skipped=skipped, failed=failed, status=status, finished_at=utcnow())
     )

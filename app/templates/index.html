@@ -46,6 +46,7 @@
           autocomplete="off"
           spellcheck="false"
         >
+        <span class="field-hint" id="tags-hint"></span>
       </div>
     </div>
 
@@ -60,6 +61,7 @@
           autocomplete="off"
           spellcheck="false"
         >
+        {% if always_blacklisted %}<span class="field-hint">Always blacklisted: {{ always_blacklisted }}</span>{% endif %}
       </div>
     </div>
 
@@ -83,6 +85,7 @@
 
   <div class="card">
 
+    <div class="progress-phase" id="progress-phase"></div>
     <div class="progress-bar-wrap">
       <div class="progress-bar">
         <div class="progress-bar__fill" id="progress-fill" style="width: 0%"></div>
@@ -127,6 +130,8 @@
   const submitLabel = document.getElementById('submit-label');
   const progressFill = document.getElementById('progress-fill');
   const progressPct = document.getElementById('progress-pct');
+  const progressPhase = document.getElementById('progress-phase');
+  const tagsHint = document.getElementById('tags-hint');
   const logOutput = document.getElementById('log-output');
   const statusBadge = document.getElementById('run-status-badge');
   const sourceSelect = document.getElementById('source');
@@ -162,14 +167,23 @@
   .then(sources => {
     sourceSelect.innerHTML = '';
     sources.forEach(source => {
+      const label = source.name.charAt(0).toUpperCase() + source.name.slice(1);
       const option = document.createElement('option');
-      option.value = source;
-      option.textContent = source.charAt(0).toUpperCase() + source.slice(1);
+      option.value = source.name;
+      option.textContent = source.configured ? label : `${label} (needs keys in .env)`;
+      option.disabled = !source.configured;
+      option.dataset.hint = source.hint;
       sourceSelect.appendChild(option);
     });
-    const saved = localStorage.getItem('booru_source');
-    if (saved) sourceSelect.value = saved;
+    const saved = sourceSelect.querySelector(`option[value="${localStorage.getItem('booru_source')}"]:not(:disabled)`);
+    if (saved) saved.selected = true;
+    showHint();
+    sourceSelect.addEventListener('change', showHint);
   });
+
+  function showHint() {
+    tagsHint.textContent = sourceSelect.selectedOptions[0]?.dataset.hint || '';
+  }
 
   restoreFormState();
   PERSIST_KEYS.forEach(id => {
@@ -180,6 +194,7 @@
   function setRunning() {
     progressFill.style.width = '0%';
     progressPct.textContent = '0%';
+    progressPhase.textContent = '';
     counts.processed.textContent = '0';
     counts.skipped.textContent = '0';
     counts.failed.textContent = '0';
@@ -190,6 +205,11 @@
     progressSection.classList.remove('hidden');
     submitBtn.disabled = true;
     submitLabel.textContent = 'Running…';
+  }
+
+  function showProgress(pct) {
+    progressFill.style.width = pct + '%';
+    progressPct.textContent = pct + '%';
   }
 
   function setFinished(badgeClass, badgeText) {
@@ -212,11 +232,9 @@
       if (msg.skipped   !== undefined) counts.skipped.textContent   = msg.skipped;
       if (msg.failed    !== undefined) counts.failed.textContent    = msg.failed;
 
-      if (msg.total > 0) {
-        const done = msg.processed + msg.skipped + msg.failed;
-        const pct = Math.round((done / msg.total) * 100);
-        progressFill.style.width = pct + '%';
-        progressPct.textContent = pct + '%';
+      if (msg.phase) {
+        progressPhase.textContent = msg.goal ? `${msg.phase}: ${msg.done} of ${msg.goal}` : msg.phase;
+        showProgress(msg.goal ? Math.round((msg.done / msg.goal) * 100) : 0);
       }
 
       if (msg.log) {
@@ -229,6 +247,7 @@
 
       if (msg.status) {
         eventSource.close();
+        if (msg.status === 'done') showProgress(100);
         setFinished(msg.status, msg.status === 'done' ? 'Done' : 'Error');
       }
     };
