@@ -110,7 +110,7 @@
       {% for run in runs %}
       <tr>
         <td class="mono time-cell">{{ run.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-        <td>{{ run.source }}</td>
+        <td>{{ run.source }}{% if run.schedule_id %}<div class="field-hint">scheduled</div>{% endif %}</td>
         <td>{{ (run.rating or 'any') | capitalize }}</td>
         <td class="tags-cell" title="{{ run.tags or '' }}">{{ run.tags or '—' }}</td>
         <td class="blacklist-cell" title="{{ run.blacklist_tags or '' }}">{{ run.blacklist_tags or '—' }}</td>

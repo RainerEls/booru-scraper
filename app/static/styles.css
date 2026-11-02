@@ -138,7 +138,10 @@ select { cursor: pointer; appearance: none;
   padding-right: 30px;
 }
 
-.form-actions { margin-top: 6px; }
+.form-actions { margin-top: 6px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.form-actions__gap { flex: 1; }
+.form-actions label { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 500; }
+.form-actions input[type="number"] { width: 72px; }
 .field-hint { font-size: 12px; color: var(--text-2); }
 
 /* ── button ──────────────────────────────────────────────────── */
@@ -157,6 +160,9 @@ select { cursor: pointer; appearance: none;
 }
 .btn--primary:hover { box-shadow: 0 0 0 4px var(--accent-glow); }
 .btn--primary:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.btn--secondary { background: var(--card-hi); color: var(--text); border: 1px solid var(--border-hi); }
+.schedule-actions { white-space: nowrap; text-align: right; }
+.schedule-actions .btn { padding: 4px 10px; font-size: 12px; }
 .btn--danger { background: var(--red-dim); color: var(--red); padding: 4px 14px; font-size: 12px; }
 .btn--danger:disabled { opacity: .45; cursor: not-allowed; }
 

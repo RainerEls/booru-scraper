@@ -3,6 +3,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Annotated, Literal
 
 import httpx
@@ -14,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from app import config, db, http, integrity, szurubooru
+from app.db import utcnow
 from app.http import run_log
 from app.sources.danbooru import DanbooruSource
 from app.sources.e621 import E621Source
@@ -33,6 +35,8 @@ SOURCES = {
     "rule34": Rule34Source(),
 }
 FEW_KNOWN_TAGS = 3000
+SCHEDULE_CHECK_SECONDS = 60
+SCHEDULED_STOP_AFTER_KNOWN = 100
 PERMANENT_UPLOAD_ERRORS = ("DownloadTooLargeError", "InvalidPostContentError")
 
 jobs = {}
@@ -99,9 +103,11 @@ async def lifespan(app: FastAPI):
     await db.migrate()
     await db.release_stale_claims()
     await db.fail_interrupted_runs()
+    scheduler = asyncio.create_task(run_schedules())
 
     yield
 
+    scheduler.cancel()
     for job in jobs.values():
         job.stop()
     await asyncio.gather(*[job.task for job in jobs.values() if job.task], return_exceptions=True)
@@ -117,6 +123,8 @@ class ScrapeSpec:
     blacklist_tags: str = ""
     rating: str | None = None
     post_ids: list | None = None
+    schedule_id: int | None = None
+    stop_after_known: int | None = None
 
 
 class Scrape(BaseModel):
@@ -125,6 +133,14 @@ class Scrape(BaseModel):
     tags: str | None = None
     blacklist_tags: str | None = None
     rating: Literal["safe", "sketchy", "unsafe", ""] | None = None
+
+
+class NewSchedule(Scrape):
+    interval_hours: int = Field(ge=1, le=720)
+
+
+class ScheduleState(BaseModel):
+    enabled: bool
 
 
 app = FastAPI(lifespan=lifespan)
@@ -142,7 +158,14 @@ def duration(run):
     return f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
 
 
+def next_run(schedule):
+    if schedule.last_run_at is None:
+        return utcnow()
+    return schedule.last_run_at + timedelta(hours=schedule.interval_hours)
+
+
 templates.env.filters["duration"] = duration
+templates.env.filters["next_run"] = next_run
 
 
 def response_json(r):
@@ -206,12 +229,18 @@ async def find_new_posts(job, spec, new_posts):
     else:
         posts = source.search_posts(tags=spec.tags, blacklist_tags=spec.blacklist_tags, rating=spec.rating)
     job.start_phase("Searching", spec.limit)
+    known_in_a_row = 0
     try:
         async for post in posts:
             job.count("total", f"Found post {post['id']}")
             db_entry = await claim_if_new(job, spec.source, post)
             if db_entry is None:
+                known_in_a_row += 1
+                if known_in_a_row == spec.stop_after_known:
+                    job.log("info", f"Caught up after {known_in_a_row} known posts in a row")
+                    return
                 continue
+            known_in_a_row = 0
             post["notes"] = await source.grab_notes(post)
             new_posts.append((db_entry, post))
             job.advance()
@@ -260,7 +289,7 @@ async def run_scrape(run_id, job, spec):
 
     try:
         run = await db.create_run(
-            run_id, spec.source, spec.tags, spec.blacklist_tags, spec.rating, spec.limit, "running"
+            run_id, spec.source, spec.tags, spec.blacklist_tags, spec.rating, spec.limit, "running", spec.schedule_id
         )
         run_log.set(job.log)
         if source.slow_tag_lookup and await db.count_tags() < FEW_KNOWN_TAGS:
@@ -309,7 +338,13 @@ def check_busy(checks):
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     return templates.TemplateResponse(
-        request=request, name="index.html", context={"always_blacklisted": config.BLACKLIST_TAGS}
+        request=request,
+        name="index.html",
+        context={
+            "always_blacklisted": config.BLACKLIST_TAGS,
+            "schedules": await db.get_schedules(),
+            "stop_after_known": SCHEDULED_STOP_AFTER_KNOWN,
+        },
     )
 
 
@@ -364,6 +399,10 @@ async def start_repull(check_id: int, background_tasks: BackgroundTasks):
 
 @app.get("/api/scrapes/active")
 async def active_scrapes():
+    return active_jobs()
+
+
+def active_jobs():
     return [job_id for job_id, job in jobs.items() if not job.finished]
 
 
@@ -396,10 +435,14 @@ def start_job(spec):
     return job_id
 
 
+def require_configured(source):
+    if source not in SOURCES or not SOURCES[source].configured:
+        raise HTTPException(status_code=422, detail=f"{source} needs its credentials in .env")
+
+
 @app.post("/scrape")
 async def scrape(scrape_request: Scrape):
-    if not SOURCES[scrape_request.source].configured:
-        raise HTTPException(status_code=422, detail=f"{scrape_request.source} needs its credentials in .env")
+    require_configured(scrape_request.source)
     spec = ScrapeSpec(
         source=scrape_request.source,
         limit=scrape_request.limit,
@@ -421,8 +464,7 @@ async def retry_run(run_id: int):
     run = await db.get_run(run_id)
     if run is None or not run.failed_posts:
         raise HTTPException(status_code=404, detail="That run has no failed posts")
-    if run.source not in SOURCES or not SOURCES[run.source].configured:
-        raise HTTPException(status_code=422, detail=f"{run.source} isn't available")
+    require_configured(run.source)
     await db.release_rejected(run.source, run.failed_posts)
     spec = ScrapeSpec(
         source=run.source,
@@ -431,3 +473,71 @@ async def retry_run(run_id: int):
         post_ids=run.failed_posts,
     )
     return {"job_id": start_job(spec)}
+
+
+async def start_schedule(schedule):
+    await db.mark_schedule_started(schedule.id)
+    spec = ScrapeSpec(
+        source=schedule.source,
+        limit=schedule.post_limit,
+        tags=schedule.tags,
+        blacklist_tags=schedule.blacklist_tags,
+        rating=schedule.rating,
+        schedule_id=schedule.id,
+        stop_after_known=SCHEDULED_STOP_AFTER_KNOWN,
+    )
+    return start_job(spec)
+
+
+async def start_due_schedule():
+    if active_jobs():
+        return
+    for schedule in await db.get_schedules():
+        source = SOURCES.get(schedule.source)
+        if schedule.enabled and source and source.configured and next_run(schedule) <= utcnow():
+            await start_schedule(schedule)
+            return
+
+
+async def run_schedules():
+    while True:
+        await asyncio.sleep(SCHEDULE_CHECK_SECONDS)
+        try:
+            await start_due_schedule()
+        except Exception:
+            logger.exception("Could not start a scheduled scrape")
+
+
+@app.post("/api/schedules", status_code=201)
+async def create_schedule(new_schedule: NewSchedule):
+    require_configured(new_schedule.source)
+    schedule_id = await db.create_schedule(
+        source=new_schedule.source,
+        tags=" ".join((new_schedule.tags or "").split()),
+        blacklist_tags=new_schedule.blacklist_tags or "",
+        rating=new_schedule.rating or None,
+        post_limit=new_schedule.limit,
+        interval_hours=new_schedule.interval_hours,
+    )
+    return {"id": schedule_id}
+
+
+@app.patch("/api/schedules/{schedule_id}", status_code=204)
+async def update_schedule(schedule_id: int, state: ScheduleState):
+    await db.set_schedule_enabled(schedule_id, state.enabled)
+
+
+@app.delete("/api/schedules/{schedule_id}", status_code=204)
+async def delete_schedule(schedule_id: int):
+    await db.delete_schedule(schedule_id)
+
+
+@app.post("/api/schedules/{schedule_id}/run")
+async def run_schedule_now(schedule_id: int):
+    schedule = await db.get_schedule(schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Unknown schedule")
+    require_configured(schedule.source)
+    if active_jobs():
+        raise HTTPException(status_code=409, detail="A scrape is already running")
+    return {"job_id": await start_schedule(schedule)}
