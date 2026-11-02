@@ -28,3 +28,14 @@ Danbooru asks for around 1 read request a second in longer sessions, which is th
 ## Rule34
 
 The user ID is the number from the account page, not the username. Tag lookups go to Gelbooru first, in batches, and anything left is looked up on Rule34 one at a time, so first runs are slow until the app knows more tags.
+
+## Related posts
+
+Posts that a source marks as parent and child are linked as relations on Szurubooru after each run, along with any siblings that share a parent. Posts are matched by MD5, so a relation still works if the image came from another source or was uploaded by hand.
+
+- Parents aren't downloaded just to complete a family. If the parent isn't on the booru, its children are still linked to each other, and to the parent if it arrives later.
+- Links are only ever added, so relations you've made yourself stay.
+- A run that gets interrupted or can't reach Szurubooru finishes the linking on the next run from that source.
+- Posts scraped before this feature don't have a parent on record. A new child still links to its older parent, but a new parent can't find its older children.
+- Danbooru's animated ugoira posts aren't linked, because the file on the booru is a converted video with a different MD5.
+- Linking relies on the `md5:` search, so it needs a Szurubooru version that has it. 2.5 does.

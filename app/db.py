@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import alembic.command
 import alembic.config
-from sqlalchemy import JSON, UniqueConstraint, delete, func, select, text, update
+from sqlalchemy import JSON, Index, UniqueConstraint, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -35,6 +35,7 @@ class Posts(Base):
     __table_args__ = (
         UniqueConstraint("source", "source_post_id"),
         UniqueConstraint("szurubooru_post_id"),
+        Index("ix_posts_source_parent_post_id", "source", "parent_post_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -46,6 +47,8 @@ class Posts(Base):
     szurubooru_post_id: Mapped[int] = mapped_column(nullable=True)
     md5: Mapped[str] = mapped_column(index=True)
     image_url: Mapped[str] = mapped_column()
+    parent_post_id: Mapped[int] = mapped_column(nullable=True)
+    links_pending: Mapped[bool] = mapped_column(default=False)
 
 
 class Tags(Base):
@@ -170,10 +173,18 @@ async def tag_exists(tag_name):
     return await has_row(Tags, Tags.tag == tag_name)
 
 
-async def claim_post(source, source_post_id, md5, image_url, status):
+async def claim_post(source, source_post_id, md5, image_url, status, parent_post_id=None):
     claim = (
         pg_insert(Posts)
-        .values(source=source, source_post_id=source_post_id, md5=md5, image_url=image_url, status=status)
+        .values(
+            source=source,
+            source_post_id=source_post_id,
+            md5=md5,
+            image_url=image_url,
+            status=status,
+            parent_post_id=parent_post_id,
+            links_pending=True,
+        )
         .on_conflict_do_nothing(index_elements=["source", "source_post_id"])
         .returning(Posts.id)
     )
@@ -220,6 +231,24 @@ async def release_rejected(source, source_post_ids):
 
 async def finish_post(id, status, szurubooru_post_id=None):
     await write(update(Posts).where(Posts.id == id).values(status=status, szurubooru_post_id=szurubooru_post_id))
+
+
+async def posts_with_links_pending(source):
+    query = select(Posts).where(Posts.source == source, Posts.links_pending, Posts.status != "queued").order_by(Posts.id)
+    async with Session() as session:
+        return (await session.scalars(query)).all()
+
+
+async def family_md5s(source, post_ids):
+    query = select(Posts.source_post_id, Posts.md5).where(
+        Posts.source == source, or_(Posts.source_post_id.in_(post_ids), Posts.parent_post_id.in_(post_ids))
+    )
+    async with Session() as session:
+        return {row.source_post_id: row.md5 for row in await session.execute(query)}
+
+
+async def finish_linking(id):
+    await write(update(Posts).where(Posts.id == id).values(links_pending=False))
 
 
 async def get_uploaded_posts():

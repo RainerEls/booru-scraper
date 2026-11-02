@@ -25,6 +25,7 @@ def post(id, url="http://static.test/a.png", **fields):
         "sources": ["http://one.test", "http://two.test"],
         "has_notes": False,
         "rating": "s",
+        "relationships": {"parent_id": None},
         **fields,
     }
 
@@ -98,3 +99,11 @@ def test_notes_are_only_requested_for_posts_that_have_them(monkeypatch):
     assert asyncio.run(source.grab_notes({"id": 1, "has_notes": True})) == [
         {"x": 1, "y": 2, "width": 3, "height": 4, "body": "**hi**"}
     ]
+
+
+def test_the_parent_comes_from_relationships(monkeypatch):
+    use_e621(monkeypatch, lambda request: httpx2.Response(200, json={"posts": [post(2, relationships={"parent_id": 1})]}))
+
+    found = collect(E621Source())
+
+    assert E621Source().parent_of(found[0]) == 1

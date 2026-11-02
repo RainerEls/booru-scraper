@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import itertools
 from urllib.parse import quote, urljoin
 
 import httpx2
@@ -126,6 +127,32 @@ async def merge_into_post(post_id, tags, source):
     }
     r = await session.put(f"{BASE_URL}/post/{post_id}", json=payload)
     r.raise_for_status()
+
+
+async def posts_with_md5(md5s):
+    posts = []
+    for batch in itertools.batched(md5s, PAGE_SIZE):
+        await asyncio.sleep(RATE_LIMIT)
+        query = f"md5:{','.join(batch)}"
+        posts += await all_results("posts/", query=query, fields="id,checksumMD5,version,relations")
+    return posts
+
+
+async def link_posts(md5, related_md5s):
+    """Relate one post to any of the others on the booru, keeping its other relations. Says if anything changed."""
+    posts = await posts_with_md5([md5, *related_md5s])
+    post = next((post for post in posts if post["checksumMD5"] == md5), None)
+    if post is None:
+        return False
+    current = {related["id"] for related in post["relations"]}
+    wanted = {found["id"] for found in posts} - {post["id"]}
+    if wanted <= current:
+        return False
+    await asyncio.sleep(RATE_LIMIT)
+    payload = {"version": post["version"], "relations": sorted(current | wanted)}
+    r = await session.put(f"{BASE_URL}/post/{post['id']}", json=payload)
+    r.raise_for_status()
+    return True
 
 
 def note_payload(note, image_width, image_height):

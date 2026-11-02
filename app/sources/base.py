@@ -134,6 +134,10 @@ class BooruSource(ABC):
     def grab_tags(self, tags):
         """Yield the name and szurubooru category of each tag, as they are found."""
 
+    def parent_of(self, post):
+        # Sources without a parent say 0, null or nothing, depending on the source.
+        return int(post.get("parent_id") or 0) or None
+
     async def find_post(self, post_id):
         found = [post async for post in self.search_posts(tags=f"id:{post_id}")]
         return found[0] if found else None
@@ -144,6 +148,11 @@ class BooruSource(ABC):
             if post:
                 yield post
             await asyncio.sleep(ID_LOOKUP_DELAY)
+
+    async def md5_of(self, post_id):
+        post = await self.find_post(post_id)
+        await asyncio.sleep(ID_LOOKUP_DELAY)
+        return post["md5"] if post else None
 
     async def grab_notes(self, post):
         return None

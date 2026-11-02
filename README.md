@@ -20,6 +20,7 @@ Pull posts from booru-style image boards into your self-hosted [szurubooru](http
 **Your library**
 
 - No duplicates: posts are matched by MD5 and source ID, and the same file from another source adds its tags and link to the existing post
+- Parent, child and sibling posts are linked as relations
 - New tags are created with the right categories
 - Integrity checks find missing or damaged posts, and tell them apart from ones you deleted or merged
 
