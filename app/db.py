@@ -79,6 +79,7 @@ class Runs(Base):
     log: Mapped[list] = mapped_column(JSON, nullable=True)
     failed_posts: Mapped[list] = mapped_column(JSON, nullable=True)
     schedule_id: Mapped[int] = mapped_column(nullable=True)
+    retry_of: Mapped[int] = mapped_column(nullable=True)
 
 
 class Schedules(Base):
@@ -239,7 +240,7 @@ async def get_runs():
         return (await session.scalars(select(Runs).order_by(Runs.created_at.desc()).limit(100))).all()
 
 
-async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, status, schedule_id=None):
+async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, status, schedule_id=None, retry_of=None):
     async with Session() as session:
         run = Runs(
             uuid=uuid,
@@ -250,6 +251,7 @@ async def create_run(uuid, source, tags, blacklist_tags, rating, post_limit, sta
             post_limit=post_limit,
             status=status,
             schedule_id=schedule_id,
+            retry_of=retry_of,
         )
         session.add(run)
         await session.commit()

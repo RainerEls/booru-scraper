@@ -124,17 +124,22 @@
           <span class="status-badge status-badge--{{ run.status }}">{{ run.status }}</span>
         </td>
       </tr>
-      {% if run.log %}
+      {% if run.log or run is repeatable %}
       <tr>
         <td colspan="12" class="check-detail">
+          {% if run.log %}
           <details>
             <summary>Log ({{ run.log | length }} lines)</summary>
             <div class="log log--run">
               {% for line in run.log %}<div class="log-line log-line--{{ line.level }}">{{ line.message }}</div>{% endfor %}
             </div>
           </details>
+          {% endif %}
           {% if run.failed_posts %}
-          <button type="button" class="btn btn--primary retry-btn" data-run="{{ run.id }}">Retry {{ run.failed_posts | length }} failed post(s)</button>
+          <button type="button" class="btn btn--primary run-action" data-url="/api/runs/{{ run.id }}/retry">Retry {{ run.failed_posts | length }} failed post(s)</button>
+          {% endif %}
+          {% if run is repeatable %}
+          <button type="button" class="btn btn--secondary run-action" data-url="/api/runs/{{ run.id }}/again">Run again</button>
           {% endif %}
         </td>
       </tr>
@@ -165,10 +170,10 @@
       fetch(`/api/integrity-checks/${this.dataset.check}/repull`, { method: 'POST' }).then(() => location.reload());
     });
   }
-  document.querySelectorAll('.retry-btn').forEach(button => {
+  document.querySelectorAll('.run-action').forEach(button => {
     button.addEventListener('click', function() {
       this.disabled = true;
-      fetch(`/api/runs/${this.dataset.run}/retry`, { method: 'POST' }).then(() => { location.href = '/'; });
+      fetch(this.dataset.url, { method: 'POST' }).then(() => { location.href = '/'; });
     });
   });
   {% if check_running %}
