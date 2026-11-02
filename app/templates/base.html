@@ -12,12 +12,14 @@
 </head>
 <body>
 
+  <a class="skip-link" href="#content">Skip to content</a>
+
   <header class="topbar">
     <div class="topbar-inner">
-      <span class="topbar-title display">Booru <span>Scraper</span></span>
-      <nav class="topbar-nav">
-        <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">Scrape</a>
-        <a href="/activity" class="nav-link {% if request.url.path == '/activity' %}active{% endif %}">Activity</a>
+      <h1 class="topbar-title display">Booru <span>Scraper</span></h1>
+      <nav class="topbar-nav" aria-label="Main">
+        <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Scrape</a>
+        <a href="/activity" class="nav-link {% if request.url.path == '/activity' %}active{% endif %}" {% if request.url.path == '/activity' %}aria-current="page"{% endif %}>Activity</a>
         {% if logged_in(request) %}
         <form method="post" action="/logout"><button type="submit" class="nav-link nav-button">Log out</button></form>
         {% endif %}
@@ -25,7 +27,7 @@
     </div>
   </header>
 
-  <main class="page-wrap">
+  <main class="page-wrap" id="content">
     {% block content %}{% endblock %}
   </main>
 

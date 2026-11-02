@@ -45,6 +45,7 @@
           placeholder="space separated · e.g. cat solo highres"
           autocomplete="off"
           spellcheck="false"
+          aria-describedby="tags-hint"
         >
         <span class="field-hint" id="tags-hint"></span>
       </div>
@@ -60,8 +61,9 @@
           placeholder="space separated · e.g. gore violence"
           autocomplete="off"
           spellcheck="false"
+          {% if always_blacklisted %}aria-describedby="always-blacklisted"{% endif %}
         >
-        {% if always_blacklisted %}<span class="field-hint">Always blacklisted: {{ always_blacklisted }}</span>{% endif %}
+        {% if always_blacklisted %}<span class="field-hint" id="always-blacklisted">Always blacklisted: {{ always_blacklisted }}</span>{% endif %}
       </div>
     </div>
 
@@ -86,14 +88,14 @@
     <h2>Current Run</h2>
     <div class="rule"></div>
     <button type="button" class="btn btn--danger hidden" id="stop-btn">Stop</button>
-    <span id="run-status-badge" class="status-badge status-badge--running">Running</span>
+    <span id="run-status-badge" class="status-badge status-badge--running" role="status">Running</span>
   </div>
 
   <div class="card">
 
     <div class="progress-phase" id="progress-phase"></div>
     <div class="progress-bar-wrap">
-      <div class="progress-bar">
+      <div class="progress-bar" id="progress-bar" role="progressbar" aria-label="Scrape progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <div class="progress-bar__fill" id="progress-fill" style="width: 0%"></div>
       </div>
       <span class="progress-pct" id="progress-pct">0%</span>
@@ -119,7 +121,7 @@
     </div>
 
     <div class="log-wrap">
-      <div class="log" id="log-output"></div>
+      <div class="log" id="log-output" role="log" aria-label="Scrape log" tabindex="0"></div>
     </div>
 
   </div>
@@ -134,23 +136,24 @@
 <p class="section-note">Runs one saved search at a time. Each run takes the newest posts up to its limit and stops after {{ stop_after_known }} known posts in a row, so use a normal scrape to fill in older posts.</p>
 
 {% if schedules %}
-<div class="card card--flush">
+<div class="card card--flush" role="region" aria-label="Schedules" tabindex="0">
   <table class="history-table">
     <thead>
       <tr>
-        <th>Source</th>
-        <th>Rating</th>
-        <th>Tags</th>
-        <th>Blacklisted</th>
-        <th class="num">Limit</th>
-        <th class="num">Every</th>
-        <th>Last Run</th>
-        <th>Next Run</th>
-        <th></th>
+        <th scope="col">Source</th>
+        <th scope="col">Rating</th>
+        <th scope="col">Tags</th>
+        <th scope="col">Blacklisted</th>
+        <th scope="col" class="num">Limit</th>
+        <th scope="col" class="num">Every</th>
+        <th scope="col">Last Run</th>
+        <th scope="col">Next Run</th>
+        <th scope="col"><span class="sr-only">Actions</span></th>
       </tr>
     </thead>
     <tbody>
       {% for schedule in schedules %}
+      {% set schedule_name = schedule.source ~ ' ' ~ (schedule.tags or 'all posts') %}
       <tr data-schedule="{{ schedule.id }}" data-enabled="{{ schedule.enabled | tojson }}">
         <td>{{ schedule.source }}</td>
         <td>{{ (schedule.rating or 'any') | capitalize }}</td>
@@ -161,9 +164,9 @@
         <td class="mono time-cell">{{ schedule.last_run_at | local_time if schedule.last_run_at else '—' }}</td>
         <td class="mono time-cell">{{ schedule | next_run | local_time if schedule.enabled else 'Paused' }}</td>
         <td class="schedule-actions">
-          <button type="button" class="btn btn--secondary schedule-run">Run</button>
-          <button type="button" class="btn btn--secondary schedule-toggle">{{ 'Pause' if schedule.enabled else 'Resume' }}</button>
-          <button type="button" class="btn btn--danger schedule-delete">Delete</button>
+          <button type="button" class="btn btn--secondary schedule-run" aria-label="Run: {{ schedule_name }}">Run</button>
+          <button type="button" class="btn btn--secondary schedule-toggle" aria-label="{{ 'Pause' if schedule.enabled else 'Resume' }}: {{ schedule_name }}">{{ 'Pause' if schedule.enabled else 'Resume' }}</button>
+          <button type="button" class="btn btn--danger schedule-delete" aria-label="Delete: {{ schedule_name }}">Delete</button>
         </td>
       </tr>
       {% endfor %}
@@ -184,6 +187,7 @@
   const progressSection = document.getElementById('progress-section');
   const submitBtn = document.getElementById('submit-btn');
   const submitLabel = document.getElementById('submit-label');
+  const progressBar = document.getElementById('progress-bar');
   const progressFill = document.getElementById('progress-fill');
   const progressPct = document.getElementById('progress-pct');
   const progressPhase = document.getElementById('progress-phase');
@@ -253,8 +257,7 @@
   });
 
   function setRunning() {
-    progressFill.style.width = '0%';
-    progressPct.textContent = '0%';
+    showProgress(0);
     progressPhase.textContent = '';
     counts.processed.textContent = '0';
     counts.skipped.textContent = '0';
@@ -271,6 +274,7 @@
   }
 
   function showProgress(pct) {
+    progressBar.setAttribute('aria-valuenow', pct);
     progressFill.style.width = pct + '%';
     progressPct.textContent = pct + '%';
   }
