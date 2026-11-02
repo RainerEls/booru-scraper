@@ -102,7 +102,7 @@ def view():
         groups.setdefault(setting.group, []).append(
             {
                 "setting": setting,
-                "value": "" if setting.secret else str(value),
+                "value": "" if setting.secret else f"{value:g}" if setting.parse is float else str(value),
                 "is_set": bool(value),
                 "from_env": config.set_by_env(setting.name),
                 "unreadable": setting.name in unreadable,

@@ -26,7 +26,7 @@
         {% if field.from_env or not editable or (setting.secret and not has_key) %}disabled{% endif %}
       >
       <span class="field-hint">
-        <code>{{ setting.name }}</code>
+        <code class="setting-name">{{ setting.name }}</code>
         {% if field.from_env %}Set in <code>.env</code>, which takes priority.{% endif %}
         {% if field.unreadable %}<strong>The saved value can't be decrypted with this <code>SETTINGS_KEY</code>. Enter it again.</strong>{% endif %}
         {{ setting.hint }}
