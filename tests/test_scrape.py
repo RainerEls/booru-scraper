@@ -100,6 +100,10 @@ def fake_db(monkeypatch):
         pass
 
     db = FakeDb()
+    async def connected():
+        return None
+
+    monkeypatch.setattr(szurubooru, "check_connection", connected)
     monkeypatch.setattr(main, "db", db)
     monkeypatch.setattr(scrape, "db", db)
     monkeypatch.setattr(scrape.szurubooru, "ensure_tag_categories", categories_exist)

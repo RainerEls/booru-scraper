@@ -65,6 +65,6 @@ def test_connection_errors_surface_after_the_last_attempt(waits):
 
 def test_other_client_errors_are_not_retried(waits):
     with pytest.raises(http.ApiError):
-        get([httpx.Response(403)])
+        get([httpx.Response(404)])
 
     assert waits == []

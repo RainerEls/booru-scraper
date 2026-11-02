@@ -2,8 +2,10 @@ import asyncio
 import base64
 from urllib.parse import quote, urljoin
 
+import httpx
+
 from app import config, http
-from app.http import api_get
+from app.http import ApiError, SetupProblem, api_get
 from app.sources.base import MAX_SOURCE_LENGTH
 
 RATE_LIMIT = config.rate_limit("SZURUBOORU")
@@ -16,6 +18,24 @@ session = http.client(
     headers={"Authorization": f"Token {_token}", "Content-Type": "application/json", "Accept": "application/json"},
     timeout=30.0,
 )
+
+
+async def check_connection():
+    if missing := config.missing_szurubooru():
+        raise SetupProblem(f"Szurubooru isn't set up. Set {', '.join(missing)} in .env.")
+    try:
+        r = await api_get(session, f"{BASE_URL}/tag-categories")
+        r.json()["results"]
+    except ApiError as e:
+        raise SetupProblem(
+            f"Szurubooru answered HTTP {e.status}. Check SZURUBOORU_BASE_URL and SZURUBOORU_USER_ID in .env."
+        ) from e
+    except httpx.TransportError as e:
+        raise SetupProblem(f"Could not reach szurubooru at {BASE_URL}. Check SZURUBOORU_BASE_URL in .env.") from e
+    except (ValueError, LookupError, TypeError) as e:
+        raise SetupProblem(
+            f"{BASE_URL} doesn't look like the szurubooru API. SZURUBOORU_BASE_URL should end in /api."
+        ) from e
 
 
 async def all_results(path, **params):

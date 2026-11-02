@@ -133,6 +133,13 @@ button, select, input, textarea { font-family: inherit; font-size: .9375rem; }
 .login-error { margin: 12px 0 0; font-size: .9375rem; color: var(--red); }
 .login-card .form-actions { margin-top: 16px; }
 
+/* ── page alerts ─────────────────────────────────────────────── */
+.page-alert {
+  margin-top: 20px; padding: 10px 14px;
+  border: 1px solid var(--red-edge); border-radius: 8px;
+  background: var(--red-dim); color: var(--text);
+}
+
 /* ── section headers ─────────────────────────────────────────── */
 .section-head {
   display: flex; align-items: center; gap: 10px;

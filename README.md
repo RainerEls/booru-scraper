@@ -35,7 +35,7 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
    cp .env.example .env
    ```
 
-   You'll need a `SZURUBOORU_BASE_URL`, a `SZURUBOORU_USER_ID`, and a `SZURUBOORU_API_TOKEN` for an account with permission to create posts. You'll also need a `GELBOORU_API_KEY` and `GELBOORU_USER_ID` — Gelbooru's API rejects unauthenticated requests outright, so these aren't optional. `YANDERE_USER_ID` and `YANDERE_PASSWORD_HASH` are optional, as are `DANBOORU_USER_ID`/`DANBOORU_API_KEY` and `E621_USER_ID`/`E621_API_KEY`. Without a paid account, Danbooru allows 2 search tags plus a rating; the blacklist is applied locally and doesn't count. `RULE34_USER_ID` (the number from the account page, not the username) and `RULE34_API_KEY` are required for Rule34, which allows 60 requests a minute. Its tag lookups go to Gelbooru first, in batches, and anything left is looked up on Rule34 one at a time, so its first runs are slow.
+   You'll need a `SZURUBOORU_BASE_URL` (ending in `/api`, such as `https://booru.example.com/api`), a `SZURUBOORU_USER_ID`, and a `SZURUBOORU_API_TOKEN` for an account with permission to create posts. You'll also need a `GELBOORU_API_KEY` and `GELBOORU_USER_ID` — Gelbooru's API rejects unauthenticated requests outright, so these aren't optional. `YANDERE_USER_ID` and `YANDERE_PASSWORD_HASH` are optional, as are `DANBOORU_USER_ID`/`DANBOORU_API_KEY` and `E621_USER_ID`/`E621_API_KEY`. Without a paid account, Danbooru allows 2 search tags plus a rating; the blacklist is applied locally and doesn't count. `RULE34_USER_ID` (the number from the account page, not the username) and `RULE34_API_KEY` are required for Rule34, which allows 60 requests a minute. Its tag lookups go to Gelbooru first, in batches, and anything left is looked up on Rule34 one at a time, so its first runs are slow.
 
    Set `TZ` to your timezone, such as `America/Chicago`, to show times in it. Times are stored in UTC either way.
 
@@ -46,6 +46,18 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
    ```
 
    The app will be available at `http://localhost:8192`, and Postgres data persists to a Docker volume.
+
+## When something's wrong
+
+A run stops straight away, with the reason in its log and a `scrape_failed` notification, when:
+
+- Szurubooru's URL, user or token isn't set, it can't be reached, or it refuses them
+- The source needs a key that isn't set
+- A source or szurubooru refuses the request with HTTP 401 or 403 at any point. Posts not yet uploaded are picked up by a later run
+
+Other errors don't stop the run. If a search fails partway, the posts already found are still uploaded, and a post or tag that fails is reported and tried again by a later run. Rate limits and server errors are retried first.
+
+Yandere ignores bad credentials and answers as if you weren't logged in, so a wrong key there can't be detected. A szurubooru account without permission to edit tags gets a warning for each tag rather than a stopped run, because its uploads can still work.
 
 ## Login
 

@@ -162,20 +162,29 @@
 <script>
   document.getElementById('check-btn').addEventListener('click', function() {
     this.disabled = true;
-    fetch('/api/integrity-checks', { method: 'POST' }).then(() => location.reload());
+    apiCall('/api/integrity-checks', { method: 'POST' }).then(res => {
+      if (res) location.reload();
+      else this.disabled = false;
+    });
   });
   const repullBtn = document.getElementById('repull-btn');
   if (repullBtn) {
     repullBtn.addEventListener('click', function() {
       if (!confirm(`Re-pull ${this.dataset.count} post(s) from their sources? This writes to szurubooru.`)) return;
       this.disabled = true;
-      fetch(`/api/integrity-checks/${this.dataset.check}/repull`, { method: 'POST' }).then(() => location.reload());
+      apiCall(`/api/integrity-checks/${this.dataset.check}/repull`, { method: 'POST' }).then(res => {
+        if (res) location.reload();
+        else this.disabled = false;
+      });
     });
   }
   document.querySelectorAll('.run-action').forEach(button => {
     button.addEventListener('click', function() {
       this.disabled = true;
-      fetch(this.dataset.url, { method: 'POST' }).then(() => { location.href = '/'; });
+      apiCall(this.dataset.url, { method: 'POST' }).then(res => {
+        if (res) location.href = '/';
+        else this.disabled = false;
+      });
     });
   });
   {% if check_running %}

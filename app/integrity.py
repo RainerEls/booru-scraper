@@ -5,6 +5,7 @@ from collections import Counter
 import httpx
 
 from app import db, notify, szurubooru
+from app.http import describe
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ async def run_check(check_id):
         report = await build_report(await db.get_uploaded_posts())
     except Exception as e:
         logger.exception("Integrity check failed")
-        await db.finish_check(check_id, "error", error=f"Nothing was reported, as the check couldn't finish: {e!r}")
+        await db.finish_check(check_id, "error", error=f"Nothing was reported, as the check couldn't finish: {describe(e)}")
         await notify.send("integrity_problems", "The check couldn't finish. See Activity for the error.")
     else:
         await db.finish_check(check_id, "done", report=report)
@@ -107,7 +108,7 @@ async def run_repull(check_id, report, sources):
         current = {i["post_id"]: i["kind"] for i in (await build_report(posts))["issues"]}
     except Exception as e:
         logger.exception("Re-pull failed")
-        await db.finish_check(check_id, "done", report=report, error=f"Nothing was re-pulled: {e!r}")
+        await db.finish_check(check_id, "done", report=report, error=f"Nothing was re-pulled: {describe(e)}")
         return
     for issue in issues:
         kind = current.get(issue["post_id"], "intact")
@@ -118,6 +119,6 @@ async def run_repull(check_id, report, sources):
             issue["repull"] = await repull_post(issue, kind, sources[issue["source"]])
         except Exception as e:
             logger.exception(f"Re-pull failed for post {issue['post_id']}")
-            issue["repull"] = f"Failed: {e!r}"
+            issue["repull"] = f"Failed: {describe(e)}"
         await asyncio.sleep(REPULL_DELAY)
     await db.finish_check(check_id, "done", report=report)
