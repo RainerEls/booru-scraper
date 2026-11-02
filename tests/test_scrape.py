@@ -599,3 +599,17 @@ def test_a_restart_marks_the_run_interrupted_and_keeps_its_log(monkeypatch, fake
     assert fake_db.runs[1] == "interrupted"
     assert job.events[-1] == {"status": "interrupted"}
     assert any(line["message"] == "Interrupted" for line in job.lines)
+
+
+def test_health_reports_whether_the_database_answers(monkeypatch):
+    async def ping():
+        return None
+
+    async def no_database():
+        raise OSError("connection refused")
+
+    client = TestClient(main.app)
+    monkeypatch.setattr(main.db, "ping", ping)
+    assert client.get("/health").status_code == 200
+    monkeypatch.setattr(main.db, "ping", no_database)
+    assert client.get("/health").status_code == 503

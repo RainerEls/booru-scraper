@@ -27,6 +27,14 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.getLevelName(config.LOGLEVEL))
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+
+class HideHealthChecks(logging.Filter):
+    def filter(self, record):
+        return "/health" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(HideHealthChecks())
+
 SOURCES = {
     "gelbooru": GelbooruSource(),
     "danbooru": DanbooruSource(),
@@ -340,6 +348,16 @@ async def run_scrape(run_id, job, spec):
 
 def check_busy(checks):
     return any(check.status in db.CHECK_BUSY for check in checks)
+
+
+@app.get("/health")
+async def health():
+    try:
+        await db.ping()
+    except Exception:
+        logger.exception("Health check could not reach the database")
+        raise HTTPException(status_code=503, detail="Database unavailable") from None
+    return {"status": "ok"}
 
 
 @app.get("/", response_class=HTMLResponse)

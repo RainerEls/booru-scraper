@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import alembic.command
 import alembic.config
-from sqlalchemy import JSON, UniqueConstraint, delete, func, select, update
+from sqlalchemy import JSON, UniqueConstraint, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -112,6 +112,11 @@ async def migrate():
 
 async def close_db():
     await engine.dispose()
+
+
+async def ping():
+    async with Session() as session:
+        await session.execute(text("SELECT 1"))
 
 
 async def has_row(table, *conditions):

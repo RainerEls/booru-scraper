@@ -44,6 +44,10 @@ FastAPI + SQLAlchemy (async) on the backend, Postgres for storage, server-render
 
    The app will be available at `http://localhost:8192`, and Postgres data persists to a Docker volume.
 
+## Health check
+
+`GET /health` answers 200 while the app can reach its database and 503 when it can't. The compose file polls it, so `docker ps` shows the app's health, and monitoring tools can poll it too.
+
 ## Upgrading
 
 Pull the new version and restart it. The app brings the database up to date when it starts, including databases from versions older than the migrations, and refuses to start if a migration fails.
