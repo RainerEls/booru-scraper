@@ -32,6 +32,7 @@ SOURCES = {
     "rule34": Rule34Source(),
 }
 FEW_KNOWN_TAGS = 3000
+PERMANENT_UPLOAD_ERRORS = ("DownloadTooLargeError", "InvalidPostContentError")
 
 jobs = {}
 
@@ -117,6 +118,8 @@ async def process_post(source, db_entry, post, semaphore, job):
                 job.count("skipped", f"Post {post['id']} already uploaded, skipping")
             else:
                 error_code = body.get("name", "Unknown")
+                if error_code in PERMANENT_UPLOAD_ERRORS:
+                    await db.finish_post(db_entry, "rejected")
                 job.failures.append(
                     {"id": post["id"], "error": error_code, "url": post["file_url"], "tags": post["tags"]}
                 )
@@ -184,9 +187,10 @@ async def sync_unknown_tags(job, source, new_posts):
 def report_failures(job):
     if not job.failures:
         return
-    job.log("warning", f"{len(job.failures)} post(s) could not be uploaded and will be retried next run:")
+    job.log("warning", f"{len(job.failures)} post(s) could not be uploaded:")
     for failure in job.failures:
-        job.log("warning", f"  {failure['id']} - {failure['error']}")
+        outcome = "won't be tried again" if failure["error"] in PERMANENT_UPLOAD_ERRORS else "retried next run"
+        job.log("warning", f"  {failure['id']} - {failure['error']}, {outcome}")
         job.log("warning", f"    url:  {failure['url']}")
         job.log("warning", f"    tags: {failure['tags']}")
 
