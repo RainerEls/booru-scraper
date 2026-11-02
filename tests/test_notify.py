@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import apprise
 import pytest
 
-from app import config, main, notify
+from app import config, notify, scrape
 
 
 class FakeServices:
@@ -92,9 +92,9 @@ def test_an_apprise_error_does_not_reach_the_caller(monkeypatch, services, caplo
     ],
 )
 def test_run_outcome_picks_the_event(status, failures, processed, schedule_id, event):
-    job = main.Job()
+    job = scrape.Job()
     job.status = status
     job.failures = failures
     job.counters["processed"] = processed
 
-    assert main.run_event(job, main.ScrapeSpec("fake", 1, schedule_id=schedule_id)) == event
+    assert scrape.run_event(job, scrape.ScrapeSpec("fake", 1, schedule_id=schedule_id)) == event
