@@ -585,7 +585,8 @@ def test_a_restart_marks_the_run_interrupted_and_keeps_its_log(monkeypatch, fake
             await asyncio.Event().wait()
             yield
 
-    monkeypatch.setitem(main.SOURCES, "fake", SlowSource())
+    use_szurubooru(monkeypatch, lambda request: httpx.Response(200, json={"results": []}))
+    monkeypatch.setitem(main.SOURCES, "fake", SlowSource([]))
 
     async def scenario():
         job = main.Job()
