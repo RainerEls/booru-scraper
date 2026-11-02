@@ -34,7 +34,7 @@ services:
       context: .
       dockerfile: Dockerfile
 
-    image: booru-scraper:latest
+    image: ghcr.io/rainerels/booru-scraper:0.1.0
     container_name: booru-scraper
     restart: unless-stopped
     stop_grace_period: 30s
