@@ -4,8 +4,10 @@ Update your checkout and restart. The app brings the database up to date when it
 
 ```bash
 git pull
-docker compose up -d --build
+docker compose up -d
 ```
+
+Add `--build` if you build the image from source.
 
 ## Going back to an older version
 
