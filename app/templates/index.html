@@ -4,7 +4,7 @@
 
 {% block content %}
 
-<div class="section-head" style="margin-top: 28px;">
+<div class="section-head">
   <h2>New Scrape Job</h2>
   <div class="rule"></div>
 </div>
@@ -75,7 +75,7 @@
 
 <div id="progress-section" class="hidden">
 
-  <div class="section-head" style="margin-top: 28px;">
+  <div class="section-head">
     <h2>Current Run</h2>
     <div class="rule"></div>
     <span id="run-status-badge" class="status-badge status-badge--running">Running</span>
@@ -140,7 +140,6 @@
 
   let eventSource = null;
 
-  // Persist form values across page loads
   const PERSIST_KEYS = ['source', 'rating', 'limit', 'tags', 'blacklist_tags'];
 
   function saveFormState() {

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from helpers import mock_client
 
 from app import integrity, szurubooru
 from app.sources.base import BooruSource
@@ -34,7 +35,7 @@ def booru(monkeypatch, posts, deleted=(), merged=(), files=None, fail=None):
         limit = int(request.url.params["limit"])
         return httpx.Response(200, json={"total": len(results), "results": results[offset : offset + limit]})
 
-    monkeypatch.setattr(szurubooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(szurubooru, "session", mock_client(handler))
 
 
 def report(rows):
@@ -159,7 +160,7 @@ def repull_booru(monkeypatch, on_booru, deleted=(), writes=None):
             results = [{"id": i, "contentUrl": f"data/posts/{i}.png", "fileSize": 100} for i in on_booru]
         return httpx.Response(200, json={"total": len(results), "results": results})
 
-    monkeypatch.setattr(szurubooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(szurubooru, "session", mock_client(handler))
     monkeypatch.setattr(integrity, "REPULL_DELAY", 0)
 
 
@@ -263,7 +264,7 @@ def test_an_unreadable_booru_pulls_nothing(monkeypatch):
     def refused(request):
         return httpx.Response(403)
 
-    monkeypatch.setattr(szurubooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(refused)))
+    monkeypatch.setattr(szurubooru, "session", mock_client(refused))
     item = issue(1, "missing")
 
     fake = repull(monkeypatch, source_rows(1), [item])

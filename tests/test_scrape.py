@@ -4,6 +4,7 @@ import json
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from helpers import mock_client
 
 from app import main, szurubooru
 from app.sources.base import BooruSource
@@ -95,8 +96,7 @@ def fake_db(monkeypatch):
 
 
 def use_szurubooru(monkeypatch, handler):
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(szurubooru, "session", client)
+    monkeypatch.setattr(szurubooru, "session", mock_client(handler))
 
 
 def run_job():

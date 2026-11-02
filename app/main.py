@@ -196,7 +196,7 @@ async def run_scrape(run_id, job, limit, source_name, tags, blacklist_tags, rati
     new_posts = []
     search = {"tags": tags or "", "blacklist_tags": blacklist_tags or "", "rating": rating}
     run = None
-    logger.info(f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist Tags: [{blacklist_tags}]")
+    logger.info(f"Scrape started - Limit: {limit}, Rating: {rating}, Tags: [{tags}], Blacklist: [{blacklist_tags}]")
 
     try:
         run = await db.create_run(run_id, source_name, tags, blacklist_tags, rating, limit, "running")

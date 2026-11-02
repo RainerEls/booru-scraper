@@ -1,6 +1,7 @@
 import asyncio
 
 import httpx
+from helpers import collect, mock_client
 
 from app.sources import e621
 from app.sources.e621 import PAGE_SIZE, E621Source
@@ -29,14 +30,7 @@ def post(id, url="http://static.test/a.png", **fields):
 
 
 def use_e621(monkeypatch, handler):
-    monkeypatch.setattr(e621, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
-
-
-def collect(source, **search):
-    async def run():
-        return [post async for post in source.search_posts(**search)]
-
-    return asyncio.run(run())
+    monkeypatch.setattr(e621, "session", mock_client(handler))
 
 
 def test_search_pages_by_id_and_normalises_posts(monkeypatch):

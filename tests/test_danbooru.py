@@ -2,6 +2,7 @@ import asyncio
 
 import httpx
 import pytest
+from helpers import collect, mock_client
 
 from app.sources import danbooru
 from app.sources.danbooru import PAGE_SIZE, DanbooruSource
@@ -26,14 +27,7 @@ def post(id, **fields):
 
 
 def use_danbooru(monkeypatch, handler):
-    monkeypatch.setattr(danbooru, "session", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
-
-
-def collect(source, **search):
-    async def run():
-        return [post async for post in source.search_posts(**search)]
-
-    return asyncio.run(run())
+    monkeypatch.setattr(danbooru, "session", mock_client(handler))
 
 
 def test_search_pages_by_id_and_normalises_posts(monkeypatch):

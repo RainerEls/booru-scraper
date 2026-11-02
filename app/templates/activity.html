@@ -4,7 +4,7 @@
 
 {% block content %}
 
-<div class="section-head" style="margin-top: 28px;">
+<div class="section-head">
   <h2>Integrity Checks</h2>
   <div class="rule"></div>
   <button type="button" class="btn btn--primary" id="check-btn" {% if check_running %}disabled{% endif %}>
@@ -61,7 +61,7 @@
             <ul class="check-issues">
               {% for issue in check.report.issues | sort(attribute="kind") %}
               <li>
-                <span class="status-badge status-badge--{{ 'error' if issue.kind in ('missing', 'damaged') else 'skipped' }}">{{ issue.kind }}</span>
+                <span class="status-badge status-badge--{{ 'error' if issue.kind in repullable else 'skipped' }}">{{ issue.kind }}</span>
                 {{ issue.source }} {{ issue.source_post_id }}, booru post {{ issue.booru_post_id }}: {{ issue.detail }}
                 <a href="{{ issue.image_url }}" rel="noreferrer">source file</a>
                 {% if issue.repull %}<strong class="check-repull">{{ issue.repull }}</strong>{% endif %}
@@ -82,7 +82,7 @@
 </div>
 {% endif %}
 
-<div class="section-head" style="margin-top: 28px;">
+<div class="section-head">
   <h2>Scrape Runs</h2>
   <div class="rule"></div>
 </div>
