@@ -1,6 +1,7 @@
 import asyncio
 import json
-from datetime import timedelta
+import time
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -566,3 +567,13 @@ def test_a_category_failure_does_not_stop_the_run(monkeypatch, fake_db):
 
     assert "tag categories" in warnings(messages)[0]
     assert messages[-1] == {"status": "done"}
+
+
+def test_local_time_follows_tz(monkeypatch):
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    time.tzset()
+    try:
+        assert main.local_time(datetime(2026, 11, 1, 20, 30)) == "2026-11-02 05:30"
+    finally:
+        monkeypatch.undo()
+        time.tzset()

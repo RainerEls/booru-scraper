@@ -3,7 +3,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, timedelta
 from typing import Annotated, Literal
 
 import httpx
@@ -164,7 +164,12 @@ def next_run(schedule):
     return schedule.last_run_at + timedelta(hours=schedule.interval_hours)
 
 
+def local_time(moment):
+    return moment.replace(tzinfo=UTC).astimezone().strftime("%Y-%m-%d %H:%M")
+
+
 templates.env.filters["duration"] = duration
+templates.env.filters["local_time"] = local_time
 templates.env.filters["next_run"] = next_run
 
 
